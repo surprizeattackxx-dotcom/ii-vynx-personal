@@ -524,47 +524,68 @@ ContentPage {
         icon: "workspaces"
         title: Translation.tr("Workspaces")
 
-        ConfigSwitch {
-            buttonIcon: "counter_1"
-            text: Translation.tr('Always show numbers')
-            checked: Config.options.bar.workspaces.alwaysShowNumbers
-            onCheckedChanged: {
-                Config.options.bar.workspaces.alwaysShowNumbers = checked;
+        ConfigRow {
+            uniform: true
+
+            ConfigSwitch {
+                buttonIcon: "grid_3x3"
+                text: Translation.tr('Use workspace map')
+                checked: Config.options.bar.workspaces.useWorkspaceMap
+                onCheckedChanged: {
+                    Config.options.bar.workspaces.useWorkspaceMap = checked;
+                }
+                StyledToolTip {
+                    text: Translation.tr("Only for multi-monitor setups, you must edit the workspace map manually in config.json\n Refer to the repo wiki for more information")
+                }
+            }
+
+            ConfigSwitch {
+                buttonIcon: "counter_1"
+                text: Translation.tr('Always show numbers')
+                checked: Config.options.bar.workspaces.alwaysShowNumbers
+                onCheckedChanged: {
+                    Config.options.bar.workspaces.alwaysShowNumbers = checked;
+                }
+            }
+        }
+
+        ConfigRow {
+            uniform: true
+
+            ConfigSwitch {
+                buttonIcon: "award_star"
+                text: Translation.tr('Show app icons')
+                checked: Config.options.bar.workspaces.showAppIcons
+                onCheckedChanged: {
+                    Config.options.bar.workspaces.showAppIcons = checked;
+                }
+            }
+
+            ConfigSwitch {
+                enabled: Config.options.bar.workspaces.showAppIcons
+                buttonIcon: "colors"
+                text: Translation.tr('Tint app icons')
+                checked: Config.options.bar.workspaces.monochromeIcons
+                onCheckedChanged: {
+                    Config.options.bar.workspaces.monochromeIcons = checked;
+                }
             }
         }
 
         ConfigSwitch {
-            buttonIcon: "award_star"
-            text: Translation.tr('Show app icons')
-            checked: Config.options.bar.workspaces.showAppIcons
+            buttonIcon: "hdr_weak"
+            text: Translation.tr("Dynamic workspaces")
+            checked: Config.options.bar.workspaces.dynamicWorkspaces
             onCheckedChanged: {
-                Config.options.bar.workspaces.showAppIcons = checked;
-            }
-        }
-
-        ConfigSwitch {
-            buttonIcon: "colors"
-            enabled: Config.options.bar.workspaces.showAppIcons
-            text: Translation.tr('Tint app icons')
-            checked: Config.options.bar.workspaces.monochromeIcons
-            onCheckedChanged: {
-                Config.options.bar.workspaces.monochromeIcons = checked;
-            }
-        }
-        
-        ConfigSwitch {
-            buttonIcon: "grid_3x3"
-            text: Translation.tr('Use workspace map')
-            checked: Config.options.bar.workspaces.useWorkspaceMap
-            onCheckedChanged: {
-                Config.options.bar.workspaces.useWorkspaceMap = checked;
+                Config.options.bar.workspaces.dynamicWorkspaces = checked;
             }
             StyledToolTip {
-                text: Translation.tr("Only for multi-monitor setups, you must edit the workspace map manually in config.json\n Refer to the repo wiki for more information")
+                text: Translation.tr("Hides the empty workspaces and only shows the ones with windows")
             }
         }
 
         ConfigSpinBox {
+            enabled: !Config.options.bar.workspaces.dynamicWorkspaces
             icon: "view_column"
             text: Translation.tr("Workspaces shown")
             value: Config.options.bar.workspaces.shown
