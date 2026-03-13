@@ -14,6 +14,9 @@ import Quickshell.Hyprland
 Scope {
     id: overviewScope
     property bool dontAutoCancelSearch: false
+
+    signal setSearchingTextRequested(string text)
+
     Variants {
         id: overviewVariant
         model: Quickshell.screens
@@ -133,6 +136,14 @@ Scope {
                     }
                 }
 
+                Connections {
+                    target: overviewScope
+                    function onSetSearchingTextRequested(text) {
+                        root.setSearchingText(text);
+                    }
+                }
+
+
                 function setSearchingText(text) {
                     searchWidget.setSearchingText(text);
                     searchWidget.focusFirstItem();
@@ -213,7 +224,7 @@ Scope {
             return;
         }
         overviewScope.dontAutoCancelSearch = true;
-        root.setSearchingText(Config.options.search.prefix.clipboard);
+        overviewScope.setSearchingTextRequested(Config.options.search.prefix.clipboard);
         GlobalStates.overviewOpen = true;
     }
 
@@ -223,7 +234,7 @@ Scope {
             return;
         }
         overviewScope.dontAutoCancelSearch = true;
-        root.setSearchingText(Config.options.search.prefix.emojis);
+        overviewScope.setSearchingTextRequested(Config.options.search.prefix.emojis);
         GlobalStates.overviewOpen = true;
     }
 
