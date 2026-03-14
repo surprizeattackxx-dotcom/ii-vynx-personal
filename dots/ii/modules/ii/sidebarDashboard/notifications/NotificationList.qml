@@ -96,7 +96,7 @@ Item {
 
                     Text {
                         text: "reply"
-                        font.family: Appearance.font.family.icon
+                        font.family: Appearance.font.family.iconMaterial
                         font.pixelSize: 14
                         color: Appearance.colors.colPrimary
                     }

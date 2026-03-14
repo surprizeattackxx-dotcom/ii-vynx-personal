@@ -40,10 +40,10 @@ Item {
     property real iconRatio: 0.8
     property bool showIcons: Config.options.bar.workspaces.showAppIcons
 
-    readonly property bool isScrollingLayout: GlobalStates.isScrollingLayout
+    readonly property bool isScrollingLayout: GlobalStates.isScrollingLayout ?? false
     property int maxWindowCount: isScrollingLayout ? Config.options.bar.workspaces.maxWindowCount : 1
 
-    readonly property bool dynamicWorkspaces: Config.options.bar.workspaces.dynamicWorkspaces
+    readonly property bool dynamicWorkspaces: Config.options.bar.workspaces.dynamicWorkspaces ?? false
 
     function isWorkspaceVisible(wsIndex) {
         const wsId = workspaceGroup * workspacesShown + wsIndex + 1 + workspaceOffset

@@ -102,14 +102,6 @@ Scope {
             }
         }
 
-        Keys.onPressed: event => {
-            if (event.key === Qt.Key_Escape) {
-                GlobalStates.overviewOpen = false;
-            }
-        }
-
-        
-
         Timer {
             id: delayedGrabTimer
             interval: Config.options.hacks.arbitraryRaceConditionDelay

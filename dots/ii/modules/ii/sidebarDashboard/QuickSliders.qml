@@ -56,19 +56,20 @@ Rectangle {
             id: repeater
             model: [
                 { show: showBrightness, icon: "brightness_6",
-                    getVal: () => root.brightnessMonitor.brightness,
-                    setVal: (v) => root.brightnessMonitor.setBrightness(v) },
-                    { show: showVolume, icon: "volume_up",
-                        getVal: () => Audio.sink.audio.volume,
-                        setVal: (v) => { Audio.sink.audio.volume = v } },
-                        { show: showMic, icon: "mic",
-                            getVal: () => Audio.source.audio.volume,
-                            setVal: (v) => { Audio.source.audio.volume = v } }
+                    getVal: () => root.brightnessMonitor?.brightness ?? 0,
+                    setVal: (v) => root.brightnessMonitor?.setBrightness(v) },
+                { show: showVolume, icon: "volume_up",
+                    getVal: () => Audio.sink?.audio?.volume ?? 0,
+                    setVal: (v) => { if (Audio.sink?.audio) Audio.sink.audio.volume = v } },
+                { show: showMic, icon: "mic",
+                    getVal: () => Audio.source?.audio?.volume ?? 0,
+                    setVal: (v) => { if (Audio.source?.audio) Audio.source.audio.volume = v } }
             ]
 
             QuickSlider {
                 required property var modelData
                 Layout.fillWidth: true
+                implicitWidth: 80  // prevent KDE Slider binding loop with fillWidth
                 visible:          modelData.show
                 materialSymbol:   modelData.icon
                 value:            modelData.getVal()

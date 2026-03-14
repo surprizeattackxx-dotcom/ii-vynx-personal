@@ -111,7 +111,7 @@ AbstractBackgroundWidget {
 
     Process { // Cover art downloader
         id: coverArtDownloader
-        property string targetFile: root.artUrl
+        property string targetFile: root.artUrl ?? ""
         property string artFilePath: root.artFilePath
         command: [ "bash", "-c", `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'` ]
         onExited: (exitCode, exitStatus) => {
@@ -155,7 +155,7 @@ AbstractBackgroundWidget {
             anchors.fill: parent
             source: root.displayedArtFilePath
             sourceSize.width: contentItem.implicitWidth
-            sourceSize.height: sourceSize.width
+            sourceSize.height: contentItem.implicitWidth
             fillMode: Image.PreserveAspectCrop
             cache: false
             antialiasing: true

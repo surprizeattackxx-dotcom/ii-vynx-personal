@@ -19,9 +19,9 @@ Item {
     property int lyricsCustomSize: Config.options.bar.mediaPlayer.lyrics.customSize
     readonly property int maxWidth: 300
 
-    readonly property bool showLoadingIndicator: Config.options.bar.mediaPlayer.lyrics.showLoadingIndicator
-    readonly property bool lyricsEnabled: Config.options.bar.mediaPlayer.lyrics.enable
-    readonly property bool useGradientMask: Config.options.bar.mediaPlayer.lyrics.useGradientMask
+    readonly property bool showLoadingIndicator: Config.options.bar.mediaPlayer.lyrics.showLoadingIndicator ?? false
+    readonly property bool lyricsEnabled: Config.options.bar.mediaPlayer.lyrics.enable ?? false
+    readonly property bool useGradientMask: Config.options.bar.mediaPlayer.lyrics.useGradientMask ?? false
     readonly property string lyricsStyle: Config.options.bar.mediaPlayer.lyrics.style
 
     Layout.fillHeight: true

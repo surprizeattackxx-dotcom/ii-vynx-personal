@@ -14,7 +14,7 @@ MouseArea {
     implicitWidth:  row.implicitWidth  + 20
     implicitHeight: row.implicitHeight + 20
 
-    readonly property bool hideWhenZero: Config.options.updates && Config.options.updates.hideWhenZero
+    readonly property bool hideWhenZero: Config.options.updates?.hideWhenZero ?? false
     readonly property color accentColor:
     Updates.count >= 25 ? Appearance.colors.colError :
     Updates.count >= 10 ? Appearance.colors.colWarning :
@@ -213,7 +213,7 @@ MouseArea {
             Behavior on opacity { NumberAnimation { duration: 300 } }
 
             property int prevCount: 0
-            onTextChanged: if (parseInt(text) > 0) countSlide.restart()
+            onTextChanged: (text) => { if (parseInt(text) > 0) countSlide.restart() }
 
             transform: Translate { id: countTranslate }
             SequentialAnimation {
