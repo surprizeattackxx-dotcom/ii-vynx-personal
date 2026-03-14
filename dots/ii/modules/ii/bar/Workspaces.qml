@@ -105,7 +105,7 @@ Item {
     Connections {
         target: HyprlandData
         function onWindowListChanged() {
-            const windowsOnMonitor = HyprlandData.windowList.filter(win => win.monitor === root.monitorIndex && !win.floating)
+            const windowsOnMonitor = HyprlandData.windowList.filter(win => win.monitor === root.monitor?.id && !win.floating)
             windowsOnMonitor.sort((a, b) => a.at[0] - b.at[0])
             root.monitorWindows = windowsOnMonitor.map(win => ({
                 icon: Quickshell.iconPath(AppSearch.guessIcon(win?.class), "image-missing"),

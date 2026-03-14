@@ -18,22 +18,23 @@ RippleButton {
     property string colorSchemeDisplayName: ""
 
     property bool builtInTheme: false
-    property bool customTheme: false
     readonly property string builtInThemeFilePath: builtInThemeDirectory + "/" + colorScheme + ".json"
-    readonly property string customThemeFilePath: customThemeDirectory + "/" + colorScheme + ".json"
-
-    // Single-pass: jq extracts primary, primary_container, secondary directly from JSON
     readonly property string builtInThemeCommand: `jq -r '.primary, .primary_container, .secondary' '${builtInThemeFilePath}'`
-    readonly property string customThemeCommand:  `jq -r '.primary, .primary_container, .secondary' '${customThemeFilePath}'`
+
+    property bool customTheme: false
+    readonly property string customThemeFilePath: customThemeDirectory + "/" + colorScheme + ".json"
+    readonly property string customThemeCommand: `jq -r '.primary, .primary_container, .secondary' '${customThemeFilePath}'`
 
     property color accentColor
     readonly property bool toggled: Config.options.appearance.palette.type === root.colorScheme
 
     readonly property string wallpaperPath: Config.options.background.wallpaperPath
     readonly property string scriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/generate_colors_material.py`)
-    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'"
+    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'" // some magic to extract hex colors from the script output
     property string scriptArguments: ` --scheme ${root.colorScheme} --debug | ${root.grepCommand}`
-    property string fullCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} ${root.scriptArguments}`
+
+    property string fullCommand: `python3 ${root.scriptPath} --color "$(${root.accentColorCommand})" ${root.scriptArguments}`
+    readonly property string accentColorCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} --debug | grep "Accent color" | awk '{print $NF}'`
 
     property color primaryColor: "transparent"
     property color secondaryColor: "transparent"
@@ -56,39 +57,38 @@ RippleButton {
     onClicked: {
         if (customTheme) {
             Config.options.appearance.palette.type = root.colorScheme;
-            // Copy JSON, convert to SCSS, then run applycolor.sh for full system theming
             Quickshell.execDetached(["bash", "-c",
+                                    `SCSS="\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
                                     `cp '${root.customThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
-                                    `jq -r 'to_entries[] | "$" + .key + ": " + .value + ";"' '${root.customThemeFilePath}' > "\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
+                                    `PRIMARY=$(jq -r '.primary' '${root.customThemeFilePath}') && ` +
+                                    `"$HOME/.local/state/quickshell/.venv/bin/python3" '${root.scriptPath}' --color "$PRIMARY" --mode dark > "$SCSS" && ` +
                                     `${Directories.scriptPath}/colors/applycolor.sh`
             ]);
         } else if (builtInTheme) {
             Config.options.appearance.palette.type = root.colorScheme;
             Quickshell.execDetached(["bash", "-c",
+                                    `SCSS="\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
                                     `cp '${root.builtInThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
-                                    `jq -r 'to_entries[] | "$" + .key + ": " + .value + ";"' '${root.builtInThemeFilePath}' > "\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
+                                    `PRIMARY=$(jq -r '.primary' '${root.builtInThemeFilePath}') && ` +
+                                    `"$HOME/.local/state/quickshell/.venv/bin/python3" '${root.scriptPath}' --color "$PRIMARY" --mode dark > "$SCSS" && ` +
                                     `${Directories.scriptPath}/colors/applycolor.sh`
             ]);
         } else {
             Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c", `${Directories.wallpaperSwitchScriptPath} --noswitch`]);
+            Quickshell.execDetached(["bash", "-c", `${Directories.wallpaperSwitchScriptPath} --noswitch --type ${root.colorScheme}`]);
         }
     }
 
-    property var effectiveCommand: root.customTheme
-    ? root.customThemeCommand
-    : root.builtInTheme
-    ? root.builtInThemeCommand
-    : root.fullCommand
+    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.fullCommand
 
     onShouldLoadChanged: {
         if (shouldLoad && !loaded) {
-            colorFetchProcess.running = true
+            colorFetchProccess.running = true
         }
     }
 
     Process {
-        id: colorFetchProcess
+        id: colorFetchProccess
         running: false
         command: [ "bash", "-c", root.effectiveCommand ]
         stdout: StdioCollector {
@@ -129,6 +129,7 @@ RippleButton {
             }
             implicitWidth: root.implicitHeight - 16
             implicitHeight: root.implicitHeight - 16
+
             antialiasing: true
 
             onPaint: {
@@ -141,6 +142,7 @@ RippleButton {
                 ctx.beginPath();
                 ctx.fillStyle = root.primaryColor;
                 ctx.moveTo(centerX, centerY);
+
                 ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
                 ctx.closePath();
                 ctx.fill();
