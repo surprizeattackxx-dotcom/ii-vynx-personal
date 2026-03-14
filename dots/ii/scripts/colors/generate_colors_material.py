@@ -3,6 +3,7 @@
 import argparse
 import math
 import json
+import re
 import sys
 from PIL import Image
 from materialyoucolor.quantize import QuantizeCelebi
@@ -47,8 +48,9 @@ parser.add_argument("--harmony",        type=float, default=0.8,  help="(0-1) Hu
 parser.add_argument("--harmonize_threshold", type=float, default=100, help="(0-180) Max hue shift angle")
 parser.add_argument("--term_fg_boost",  type=float, default=0.35, help="Boost terminal fg/bg contrast")
 parser.add_argument("--blend_bg_fg",    action="store_true", default=False, help="Shift terminal bg/fg toward accent")
-parser.add_argument("--cache",  type=str, default=None, help="File path to cache the dominant color hex")
-parser.add_argument("--debug",  action="store_true", default=False, help="Print debug info instead of SCSS")
+parser.add_argument("--cache",    type=str, default=None, help="File path to cache the dominant color hex")
+parser.add_argument("--json-out", type=str, default=None, help="Write colors as JSON to this path (for MaterialThemeLoader)")
+parser.add_argument("--debug",    action="store_true", default=False, help="Print debug info instead of SCSS")
 args = parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -81,6 +83,10 @@ def harmonize(design_color: int, source_color: int,
 def boost_chroma_tone(argb: int, chroma: float = 1, tone: float = 1) -> int:
     hct = Hct.from_int(argb)
     return Hct.from_hct(hct.hue, hct.chroma * chroma, hct.tone * tone).to_int()
+
+def camel_to_snake(name: str) -> str:
+    s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 def load_scheme_class(name: str):
     """Dynamically import a scheme class from SCHEME_MAP."""
@@ -204,6 +210,17 @@ if args.termscheme is not None:
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
+if args.json_out is not None:
+    json_colors = {
+        camel_to_snake(k): v
+        for k, v in material_colors.items()
+        if "palette" not in k.lower() and not k.startswith("term")
+    }
+    import os
+    os.makedirs(os.path.dirname(args.json_out), exist_ok=True)
+    with open(args.json_out, "w") as f:
+        json.dump(json_colors, f, indent=2)
+
 if not args.debug:
     print(f"$darkmode: {darkmode};")
     print(f"$transparent: {transparent};")

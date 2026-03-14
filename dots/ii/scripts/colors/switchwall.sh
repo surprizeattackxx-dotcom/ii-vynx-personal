@@ -83,8 +83,7 @@ check_and_prompt_upscale() {
         if [[ "$img_width" -lt "$min_width_desired" || "$img_height" -lt "$min_height_desired" ]]; then
             action=$(notify-send "Upscale?" \
                 "Image resolution (${img_width}x${img_height}) is lower than screen resolution (${min_width_desired}x${min_height_desired})" \
-                -A "open_upscayl=Open Upscayl"\
-                -a "Wallpaper switcher")
+                -A "open_upscayl=Open Upscayl")
             if [[ "$action" == "open_upscayl" ]]; then
                 if command -v upscayl &>/dev/null; then
                     nohup upscayl > /dev/null 2>&1 &
@@ -105,6 +104,13 @@ check_and_prompt_upscale() {
             fi
         fi
     fi
+}
+
+DISABLED_MONITORS_FILE="$STATE_DIR/user/generated/wallpaper/monitors_disabled.txt"
+
+# Returns 0 (true) if the given monitor name is in the disabled list
+monitor_is_disabled() {
+    [[ -f "$DISABLED_MONITORS_FILE" ]] && grep -qx "$1" "$DISABLED_MONITORS_FILE"
 }
 
 CUSTOM_DIR="$XDG_CONFIG_HOME/hypr/custom"
@@ -131,7 +137,9 @@ create_restore_script() {
 
 pkill -f -9 mpvpaper
 
+DISABLED_MONITORS_FILE="$DISABLED_MONITORS_FILE"
 for monitor in \$(hyprctl monitors -j | jq -r '.[] | .name'); do
+    [[ -f "\$DISABLED_MONITORS_FILE" ]] && grep -qx "\$monitor" "\$DISABLED_MONITORS_FILE" && continue
     mpvpaper -o "$VIDEO_OPTS" "\$monitor" "$video_path" &
     sleep 0.1
 done
@@ -269,6 +277,7 @@ switch() {
             local video_path="$imgpath"
             monitors=$(hyprctl monitors -j | jq -r '.[] | .name')
             for monitor in $monitors; do
+                monitor_is_disabled "$monitor" && continue
                 nohup mpvpaper -o "$VIDEO_OPTS" "$monitor" "$video_path" >/dev/null 2>&1 &
                 sleep 0.1
             done
@@ -352,6 +361,7 @@ switch() {
     [[ -n "$type_flag" ]] && matugen_args+=(--type "$type_flag") && generate_colors_material_args+=(--scheme "$type_flag")
     generate_colors_material_args+=(--termscheme "$terminalscheme" --blend_bg_fg)
     generate_colors_material_args+=(--cache "$STATE_DIR/user/generated/color.txt")
+    generate_colors_material_args+=(--json-out "$STATE_DIR/user/generated/colors.json")
 
     pre_process "$mode_flag"
 
@@ -374,7 +384,7 @@ switch() {
         [[ "$term_fg_boost" != "null" && -n "$term_fg_boost" ]] && generate_colors_material_args+=(--term_fg_boost "$term_fg_boost")
     fi
 
-    matugen "${matugen_args[@]}"
+    matugen "${matugen_args[@]}" 2>/dev/null || true
     source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
     python3 "$SCRIPT_DIR/generate_colors_material.py" "${generate_colors_material_args[@]}" \
         > "$STATE_DIR"/user/generated/material_colors.scss
@@ -460,6 +470,7 @@ main() {
                         [[ -f "$_state_file" ]] || continue
                         _mon=$(jq -r '.monitor // empty' "$_state_file" 2>/dev/null)
                         _path=$(jq -r '.path // empty' "$_state_file" 2>/dev/null)
+                        monitor_is_disabled "$_mon" && continue
                         if [[ -n "$_mon" && -n "$_path" && -f "$_path" ]]; then
                             swww img "$_path" --outputs "$_mon" --transition-type none 2>/dev/null &
                             _restored=1
@@ -517,7 +528,7 @@ main() {
     fi
 
     # Validate type_flag (allow 'auto' as well)
-    allowed_types=(scheme-content scheme-expressive scheme-fidelity scheme-fruit-salad scheme-monochrome scheme-neutral scheme-rainbow scheme-tonal-spot auto)
+    allowed_types=(scheme-content scheme-expressive scheme-fidelity scheme-fruit-salad scheme-monochrome scheme-neutral scheme-rainbow scheme-tonal-spot scheme-vibrant auto)
     valid_type=0
     for t in "${allowed_types[@]}"; do
         if [[ "$type_flag" == "$t" ]]; then
