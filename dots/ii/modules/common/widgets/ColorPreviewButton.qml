@@ -18,23 +18,22 @@ RippleButton {
     property string colorSchemeDisplayName: ""
 
     property bool builtInTheme: false
-    readonly property string builtInThemeFilePath: builtInThemeDirectory + "/" + colorScheme + ".json"
-    readonly property string builtInThemeCommand: ` jq -r '.primary, .primary_container, .secondary' ${builtInThemeFilePath}`
-
     property bool customTheme: false
+    readonly property string builtInThemeFilePath: builtInThemeDirectory + "/" + colorScheme + ".json"
     readonly property string customThemeFilePath: customThemeDirectory + "/" + colorScheme + ".json"
-    readonly property string customThemeCommand: ` jq -r '.primary, .primary_container, .secondary' ${customThemeFilePath}`
+
+    // Single-pass: jq extracts primary, primary_container, secondary directly from JSON
+    readonly property string builtInThemeCommand: `jq -r '.primary, .primary_container, .secondary' '${builtInThemeFilePath}'`
+    readonly property string customThemeCommand:  `jq -r '.primary, .primary_container, .secondary' '${customThemeFilePath}'`
 
     property color accentColor
     readonly property bool toggled: Config.options.appearance.palette.type === root.colorScheme
 
     readonly property string wallpaperPath: Config.options.background.wallpaperPath
     readonly property string scriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/generate_colors_material.py`)
-    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'" // some magic to extract hex colors from the script output
+    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'"
     property string scriptArguments: ` --scheme ${root.colorScheme} --debug | ${root.grepCommand}`
-
-    property string fullCommand: `python3 ${root.scriptPath} --color "$(${root.accentColorCommand})" ${root.scriptArguments}`
-    readonly property string accentColorCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} --debug | grep "Accent color" | awk '{print $NF}'`
+    property string fullCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} ${root.scriptArguments}`
 
     property color primaryColor: "transparent"
     property color secondaryColor: "transparent"
@@ -42,6 +41,8 @@ RippleButton {
 
     property bool loaded: false
     property bool shouldLoad: false
+
+    signal deleteRequested(string schemeName)
 
     colBackground: toggled ? Appearance.colors.colPrimaryContainer : Appearance.colors.colLayer2
     colBackgroundHover: toggled ? Appearance.colors.colPrimaryContainerHover : Appearance.colors.colLayer2Hover
@@ -55,26 +56,39 @@ RippleButton {
     onClicked: {
         if (customTheme) {
             Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c", `cp ${root.customThemeFilePath} ${Directories.generatedMaterialThemePath} && ${Directories.scriptPath}/colors/applycolor.sh`]);
+            // Copy JSON, convert to SCSS, then run applycolor.sh for full system theming
+            Quickshell.execDetached(["bash", "-c",
+                                    `cp '${root.customThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
+                                    `jq -r 'to_entries[] | "$" + .key + ": " + .value + ";"' '${root.customThemeFilePath}' > "\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
+                                    `${Directories.scriptPath}/colors/applycolor.sh`
+            ]);
         } else if (builtInTheme) {
             Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c", `cp ${root.builtInThemeFilePath} ${Directories.generatedMaterialThemePath} && ${Directories.scriptPath}/colors/applycolor.sh`]);
+            Quickshell.execDetached(["bash", "-c",
+                                    `cp '${root.builtInThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
+                                    `jq -r 'to_entries[] | "$" + .key + ": " + .value + ";"' '${root.builtInThemeFilePath}' > "\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
+                                    `${Directories.scriptPath}/colors/applycolor.sh`
+            ]);
         } else {
             Config.options.appearance.palette.type = root.colorScheme;
             Quickshell.execDetached(["bash", "-c", `${Directories.wallpaperSwitchScriptPath} --noswitch`]);
         }
     }
 
-    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.fullCommand
+    property var effectiveCommand: root.customTheme
+    ? root.customThemeCommand
+    : root.builtInTheme
+    ? root.builtInThemeCommand
+    : root.fullCommand
 
     onShouldLoadChanged: {
         if (shouldLoad && !loaded) {
-            colorFetchProccess.running = true
+            colorFetchProcess.running = true
         }
     }
 
     Process {
-        id: colorFetchProccess
+        id: colorFetchProcess
         running: false
         command: [ "bash", "-c", root.effectiveCommand ]
         stdout: StdioCollector {
@@ -115,7 +129,6 @@ RippleButton {
             }
             implicitWidth: root.implicitHeight - 16
             implicitHeight: root.implicitHeight - 16
-
             antialiasing: true
 
             onPaint: {
@@ -128,7 +141,6 @@ RippleButton {
                 ctx.beginPath();
                 ctx.fillStyle = root.primaryColor;
                 ctx.moveTo(centerX, centerY);
-
                 ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
                 ctx.closePath();
                 ctx.fill();
@@ -149,6 +161,24 @@ RippleButton {
             }
         }
 
+        // Delete button — only shown on custom themes
+        Loader {
+            active: root.customTheme
+            anchors { top: parent.top; right: parent.right; margins: 4 }
+            sourceComponent: Rectangle {
+                width: 20; height: 20; radius: 10
+                color: deleteHover.hovered
+                ? Qt.rgba(Appearance.colors.colError.r, Appearance.colors.colError.g, Appearance.colors.colError.b, 0.85)
+                : Qt.rgba(Appearance.colors.colError.r, Appearance.colors.colError.g, Appearance.colors.colError.b, 0.55)
+                Behavior on color { ColorAnimation { duration: 120 } }
+                HoverHandler { id: deleteHover }
+                MaterialSymbol { anchors.centerIn: parent; text: "close"; iconSize: 12; color: "white" }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: (e) => { e.accepted = true; root.deleteRequested(root.colorScheme) }
+                }
+            }
+        }
     }
-
 }
