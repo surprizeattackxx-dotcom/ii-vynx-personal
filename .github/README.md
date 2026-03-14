@@ -41,7 +41,7 @@ You can join this [**ii-vynx channel**](https://discord.com/channels/13930804222
 1. Clone this repository like this:
 
 ```
-git clone https://github.com/vaguesyntax/ii-vynx.git --recurse-submodules
+git clone https://github.com/surprizeattackxx-dotcom/ii-vynx.git --recurse-submodules
 ```
 
 2. Run the setup script and follow the instructions:
