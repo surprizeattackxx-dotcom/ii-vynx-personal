@@ -410,8 +410,17 @@ main() {
 
     detect_scheme_type_from_image() {
         local img="$1"
+        local t1 t2 t3 t4 brightness_mid
+        t1=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t1 // 20' "$SHELL_CONFIG_FILE" 2>/dev/null)
+        t2=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t2 // 40' "$SHELL_CONFIG_FILE" 2>/dev/null)
+        t3=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t3 // 70' "$SHELL_CONFIG_FILE" 2>/dev/null)
+        t4=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t4 // 100' "$SHELL_CONFIG_FILE" 2>/dev/null)
+        brightness_mid=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.brightnessMid // 128' "$SHELL_CONFIG_FILE" 2>/dev/null)
         source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
-        "$SCRIPT_DIR"/scheme_for_image.py "$img" 2>/dev/null | tr -d '\n'
+        "$SCRIPT_DIR"/scheme_for_image.py "$img" \
+            --t1 "${t1:-20}" --t2 "${t2:-40}" --t3 "${t3:-70}" --t4 "${t4:-100}" \
+            --brightness-mid "${brightness_mid:-128}" \
+            2>/dev/null | tr -d '\n'
         deactivate
     }
 

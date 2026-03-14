@@ -207,6 +207,30 @@ GroupButton {
         }
     }
 
+    // ── Edit mode highlight border ────────────────────────────────────────────
+    Rectangle {
+        anchors.fill: parent
+        radius: root.radius
+        color: "transparent"
+        border.width: root.editMode ? 1.5 : 0
+        border.color: root.editMode
+        ? Qt.rgba(Appearance.colors.colPrimary.r,
+                  Appearance.colors.colPrimary.g,
+                  Appearance.colors.colPrimary.b, 0.7)
+        : "transparent"
+        visible: root.editMode
+        Behavior on border.color { ColorAnimation { duration: 150 } }
+
+        // Small drag handle hint in top-right corner
+        MaterialSymbol {
+            anchors { top: parent.top; right: parent.right; margins: 3 }
+            text: "drag_indicator"
+            iconSize: 9
+            color: Appearance.colors.colPrimary
+            opacity: 0.7
+        }
+    }
+
     StyledToolTip {
         extraVisibleCondition: root.tooltipText !== ""
         text: root.tooltipText

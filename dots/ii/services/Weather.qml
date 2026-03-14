@@ -56,8 +56,38 @@ Singleton {
     // forecast: list of { dayLabel, wCode, tempMin, tempMax, description }
     property var forecast: []
 
-    // alerts: list of { event, start, end, description } — populated if One Call 3.0 is ever used
+    // alerts: list of { event } — generated from current conditions
     property var alerts: []
+
+    function generateAlerts(current) {
+        const newAlerts = []
+        const windMs    = current?.wind?.speed  || 0
+        const tempC     = current?.main?.temp   || 0
+        const uvi       = root.data.uv          || 0
+        const wCode     = root.data.wCode
+
+        const windKmh = windMs * 3.6
+        if (windKmh >= 50) {
+            const windStr = root.useUSCS
+            ? (windMs * 2.23694).toFixed(1) + " mph"
+            : windKmh.toFixed(1) + " km/h"
+            newAlerts.push({ event: Translation.tr("Wind Advisory") + " — " + windStr })
+        }
+
+        if (tempC >= 35) {
+            const tStr = root.useUSCS ? Math.round(tempC * 9/5 + 32) + "°F" : Math.round(tempC) + "°C"
+            newAlerts.push({ event: Translation.tr("Heat Advisory") + " — " + tStr })
+        } else if (tempC <= -10) {
+            const tStr = root.useUSCS ? Math.round(tempC * 9/5 + 32) + "°F" : Math.round(tempC) + "°C"
+            newAlerts.push({ event: Translation.tr("Freeze Warning") + " — " + tStr })
+        }
+
+        if (uvi >= 8)     newAlerts.push({ event: Translation.tr("High UV Index") + " — " + uvi })
+            if (wCode === 389) newAlerts.push({ event: Translation.tr("Thunderstorm Warning") })
+                if (wCode === 338) newAlerts.push({ event: Translation.tr("Winter Storm Warning") })
+
+                    root.alerts = newAlerts
+    }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -140,6 +170,7 @@ Singleton {
 
         temp.lastRefresh = DateTime.time + " • " + DateTime.date;
         root.data = temp;
+        root.generateAlerts(current);
     }
 
     // ── 5-day forecast ────────────────────────────────────────────────────────

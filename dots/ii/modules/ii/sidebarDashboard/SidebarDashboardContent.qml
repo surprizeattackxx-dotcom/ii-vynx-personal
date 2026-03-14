@@ -62,6 +62,16 @@ Item {
             Appearance.colors.colPrimary.b, 0.18)
         radius: Appearance.rounding.screenRounding - Appearance.sizes.hyprlandGapsOut + 1
 
+        // ── Edit mode dim overlay ─────────────────────────────────────────────
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: Qt.rgba(0, 0, 0, 0.18)
+            opacity: root.editMode ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 200 } }
+            z: 0
+        }
+
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: sidebarPadding
@@ -96,6 +106,54 @@ Item {
                 styleName: "android"
                 sourceComponent: AndroidQuickPanel {
                     editMode: root.editMode
+                }
+            }
+
+            // ── Edit mode overlay label ───────────────────────────────────────
+            Loader {
+                active: root.editMode && Config.options.sidebar.quickToggles.style === "android"
+                Layout.fillWidth: true
+                sourceComponent: Rectangle {
+                    implicitHeight: editModeRow.implicitHeight + 10
+                    radius: Appearance.rounding.small
+                    color: Qt.rgba(
+                        Appearance.colors.colPrimary.r,
+                        Appearance.colors.colPrimary.g,
+                        Appearance.colors.colPrimary.b, 0.12)
+                    border.width: 1
+                    border.color: Qt.rgba(
+                        Appearance.colors.colPrimary.r,
+                        Appearance.colors.colPrimary.g,
+                        Appearance.colors.colPrimary.b, 0.35)
+
+                    RowLayout {
+                        id: editModeRow
+                        anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+                        spacing: 6
+                        MaterialSymbol {
+                            text: "edit"
+                            iconSize: Appearance.font.pixelSize.normal
+                            color: Appearance.colors.colPrimary
+                        }
+                        StyledText {
+                            Layout.fillWidth: true
+                            text: Translation.tr("Edit mode — LMB toggle · RMB resize · Scroll reorder")
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                            color: Appearance.colors.colPrimary
+                            wrapMode: Text.WordWrap
+                        }
+                        MaterialSymbol {
+                            text: "close"
+                            iconSize: Appearance.font.pixelSize.normal
+                            color: Appearance.colors.colPrimary
+                            opacity: 0.6
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.editMode = false
+                            }
+                        }
+                    }
                 }
             }
 
