@@ -31,6 +31,38 @@ Item {
         anchors.centerIn: parent
 
         Loader {
+            id: clipboardLoader
+            active: Config.options.bar.utilButtons.showClipboard ?? true
+            visible: active
+            sourceComponent: Item {
+                id: clipboardButtonItem
+                implicitWidth: clipBtn.implicitWidth
+                implicitHeight: clipBtn.implicitHeight
+
+                property bool clipboardOpen: false
+
+                CircleUtilButton {
+                    id: clipBtn
+                    extraActiveCondition: clipboardButtonItem.clipboardOpen
+                    onClicked: clipboardButtonItem.clipboardOpen = !clipboardButtonItem.clipboardOpen
+                    MaterialSymbol {
+                        horizontalAlignment: Qt.AlignHCenter
+                        fill: clipboardButtonItem.clipboardOpen ? 1 : 0
+                        text: "content_paste"
+                        iconSize: Appearance.font.pixelSize.large
+                        color: Appearance.m3colors.m3onSurface
+                    }
+                }
+
+                ClipboardPopup {
+                    hoverTarget: clipBtn
+                    clipboardActive: clipboardButtonItem.clipboardOpen
+                    onCloseRequested: clipboardButtonItem.clipboardOpen = false
+                }
+            }
+        }
+
+        Loader {
             active: Config.options.bar.utilButtons.showScreenSnip
             visible: Config.options.bar.utilButtons.showScreenSnip
             sourceComponent: CircleUtilButton {

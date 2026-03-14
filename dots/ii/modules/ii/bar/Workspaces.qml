@@ -545,6 +545,16 @@ Item {
         }
     }
 
+    // Workspace window preview popup — shows on hover when workspace has windows
+    WorkspacePreviewPopup {
+        readonly property int hoveredWsId: root.workspaceGroup * root.workspacesShown + interactionMouseArea.hoverIndex + 1 + root.workspaceOffset
+        readonly property var hoveredWindows: HyprlandData.windowList.filter(w => w.workspace.id === hoveredWsId && !w.floating)
+
+        hoverTarget: root
+        open: (Config.options.bar.workspaces.showPreviewOnHover ?? true) && interactionMouseArea.containsMouse && hoveredWindows.length > 0 || popupHovered
+        windows: hoveredWindows
+    }
+
     component HoverOverlay: Rectangle {
         id: hoverOverlay
         anchors.fill: parent

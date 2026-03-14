@@ -26,6 +26,10 @@ Singleton {
     property string maxAvailableSwapString: kbToGbString(ResourceUsage.swapTotal)
     property string maxAvailableCpuString: "--"
 
+    // CPU package temperature from x86_pkg_temp (more accurate than acpitz/zone0)
+    property real cpuTemp: 0
+    readonly property string cpuTempString: cpuTemp > 0 ? cpuTemp.toFixed(1) + " °C" : "—"
+
     readonly property int historyLength: Config?.options.resources.historyLength ?? 60
     property list<real> cpuUsageHistory: []
     property list<real> memoryUsageHistory: []
@@ -67,6 +71,9 @@ Singleton {
             // Reload files
             fileMeminfo.reload()
             fileStat.reload()
+            fileCpuTemp.reload()
+            const rawCpuTemp = parseFloat(fileCpuTemp.text())
+            if (!isNaN(rawCpuTemp) && rawCpuTemp > 0) cpuTemp = rawCpuTemp / 1000
 
             // Parse memory and swap usage
             const textMeminfo = fileMeminfo.text()
@@ -99,6 +106,7 @@ Singleton {
 
 	FileView { id: fileMeminfo; path: "/proc/meminfo" }
     FileView { id: fileStat; path: "/proc/stat" }
+    FileView { id: fileCpuTemp; path: "/sys/class/thermal/thermal_zone4/temp" }
 
     Process {
         id: findCpuMaxFreqProc

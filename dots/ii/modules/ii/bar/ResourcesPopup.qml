@@ -27,7 +27,9 @@ StyledPopup {
             return Appearance.colors.colError;
         }
 
-        property string cpuFreq: "…"; property string cpuTemp: "…"; property real cpuTempVal: 0
+        property string cpuFreq: "…"
+        readonly property string cpuTemp: ResourceUsage.cpuTempString
+        readonly property real cpuTempVal: ResourceUsage.cpuTemp
         property string diskUsed:"…"; property string diskFree:"…"; property string diskTotal:"…"; property real diskRatio: 0
         property string gpuLoad:"…"; property string gpuVramUsed:"…"; property string gpuTemp:"…"
         property real   gpuRatio: 0; property real gpuTempVal: 0; property real gpuUsage: 0
@@ -39,13 +41,8 @@ StyledPopup {
                 running: true
                 stdout: SplitParser { onRead: (l) => { const v=parseFloat(l); if(!isNaN(v)) content.cpuFreq=(v/1000).toFixed(2)+" GHz"; }}
             }
-            property var cpuTempProc: Process {
-                command: ["bash","-c","cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0"]
-                running: true
-                stdout: SplitParser { onRead: (l) => { const v=parseFloat(l); if(!isNaN(v)){content.cpuTempVal=v/1000;content.cpuTemp=content.cpuTempVal.toFixed(1)+" °C";}}}
-            }
             property var cpuTimer: Timer { interval:3000;repeat:true;running:true
-                onTriggered:{backend.cpuFreqProc.running=true;backend.cpuTempProc.running=true;}
+                onTriggered: backend.cpuFreqProc.running = true
             }
             property var gpuProc: Process {
                 command: ["bash","-c","nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.free,memory.total,temperature.gpu --format=csv,noheader,nounits"]

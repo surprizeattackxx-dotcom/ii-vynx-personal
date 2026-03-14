@@ -509,6 +509,14 @@ ContentPage {
                     Config.options.bar.utilButtons.showScreenRecord = checked;
                 }
             }
+            ConfigSwitch {
+                buttonIcon: "content_paste"
+                text: Translation.tr("Clipboard")
+                checked: Config.options.bar.utilButtons.showClipboard ?? true
+                onCheckedChanged: {
+                    Config.options.bar.utilButtons.showClipboard = checked;
+                }
+            }
         }
     }
 
@@ -532,6 +540,15 @@ ContentPage {
             checked: Config.options.bar.workspaces.showAppIcons
             onCheckedChanged: {
                 Config.options.bar.workspaces.showAppIcons = checked;
+            }
+        }
+
+        ConfigSwitch {
+            buttonIcon: "preview"
+            text: Translation.tr('Show window preview on hover')
+            checked: Config.options.bar.workspaces.showPreviewOnHover ?? true
+            onCheckedChanged: {
+                Config.options.bar.workspaces.showPreviewOnHover = checked;
             }
         }
 
