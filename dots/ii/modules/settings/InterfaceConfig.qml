@@ -17,6 +17,7 @@ ContentPage {
     // ── Lock screen background state (page-level so Process/props are valid) ──
     property string hyprlockCurrentPath: ""
     property string sddmCurrentPath: ""
+    property string sddmCurrentTheme: ""
 
     Process {
         id: hyprlockReadProc
@@ -73,6 +74,36 @@ ContentPage {
         }
     }
     Process { id: setSddmProc }
+
+    Process {
+        id: sddmThemeReadProc
+        command: ["bash", Directories.readSddmThemeScriptPath]
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => { const t = data.trim(); if (t.length > 0) page.sddmCurrentTheme = t }
+        }
+        Component.onCompleted: running = true
+    }
+    Process {
+        id: setSddmThemeProc
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: _ => { sddmReadProc.running = true }
+        }
+        function setTheme(name) {
+            command = ["pkexec", "bash", Directories.setSddmThemeScriptPath, name]
+            page.sddmCurrentTheme = name
+            running = true
+        }
+    }
+    Process {
+        id: sddmPreviewProc
+        function preview() {
+            command = ["sddm-greeter-qt6", "--test-mode",
+                "--theme", "/usr/share/sddm/themes/sddm-astronaut-theme/"]
+            running = true
+        }
+    }
 
     ContentSection {
         icon: "model_training"
@@ -424,6 +455,36 @@ ContentPage {
                 font.pixelSize: Appearance.font.pixelSize.small
                 font.weight: Font.Medium
                 color: Appearance.colors.colOnLayer1
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                ConfigSelectionArray {
+                    Layout.fillWidth: true
+                    currentValue: page.sddmCurrentTheme
+                    onSelected: newValue => setSddmThemeProc.setTheme(newValue)
+                    options: [
+                        { value: "astronaut",               displayName: Translation.tr("Astronaut") },
+                        { value: "black_hole",              displayName: Translation.tr("Black Hole") },
+                        { value: "cyberpunk",               displayName: Translation.tr("Cyberpunk") },
+                        { value: "hyprland_kath",           displayName: Translation.tr("Hyprland Kath") },
+                        { value: "jake_the_dog",            displayName: Translation.tr("Jake the Dog") },
+                        { value: "japanese_aesthetic",      displayName: Translation.tr("Japanese") },
+                        { value: "pixel_sakura",            displayName: Translation.tr("Pixel Sakura") },
+                        { value: "pixel_sakura_static",     displayName: Translation.tr("Pixel Sakura (Static)") },
+                        { value: "post-apocalyptic_hacker", displayName: Translation.tr("Post-Apoc") },
+                        { value: "purple_leaves",           displayName: Translation.tr("Purple Leaves") },
+                    ]
+                }
+                RippleButtonWithIcon {
+                    buttonRadius: Appearance.rounding.full
+                    materialIcon: "preview"
+                    mainText: Translation.tr("Preview")
+                    onClicked: sddmPreviewProc.preview()
+                    StyledToolTip {
+                        text: Translation.tr("Launch SDDM greeter in test mode to preview the full UI")
+                    }
+                }
             }
 
             Item {

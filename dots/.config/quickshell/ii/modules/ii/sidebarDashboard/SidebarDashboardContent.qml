@@ -320,7 +320,7 @@ Item {
                     
                 }
                 StyledToolTip {
-                    text: Translation.tr("Update the ii-vynx, make sure to set script path in settings")
+                    text: Translation.tr("Update the ii-lacuna, make sure to set script path in settings")
                 }
             }
             QuickToggleButton {

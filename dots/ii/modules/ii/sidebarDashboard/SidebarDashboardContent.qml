@@ -343,7 +343,7 @@ Item {
                         confirmTimer.start();
                     }
                 }
-                StyledToolTip { text: Translation.tr("Update the ii-vynx, make sure to set script path in settings") }
+                StyledToolTip { text: Translation.tr("Update the ii-lacuna, make sure to set script path in settings") }
             }
             QuickToggleButton {
                 toggled: false

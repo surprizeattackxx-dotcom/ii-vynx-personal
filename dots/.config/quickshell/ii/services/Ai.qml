@@ -35,6 +35,10 @@ Singleton {
             // QML/JS doesn't support replaceAll, so use split/join
             prompt = prompt.split(key).join(root.promptSubstitutions[key]);
         }
+        const memory = root.aiMemoryContent.trim();
+        if (memory.length > 0) {
+            prompt += `\n\n## Your memory of the user\n${memory}`;
+        }
         return prompt;
     }
     // property var messages: []
@@ -75,7 +79,17 @@ Singleton {
         "{DISTRO}": SystemInfo.distroName,
         "{DATETIME}": `${DateTime.time}, ${DateTime.collapsedCalendarFormat}`,
         "{WINDOWCLASS}": ToplevelManager.activeToplevel?.appId ?? "Unknown",
-        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})` 
+        "{WINDOWTITLE}": ToplevelManager.activeToplevel?.title ?? "Unknown",
+        "{CLIPBOARD}": (Quickshell.clipboardText ?? "").substring(0, 300),
+        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})`
+    }
+
+    property string aiMemoryContent: ""
+    FileView {
+        id: memoryFileView
+        path: Directories.aiMemoryPath
+        onTextChanged: root.aiMemoryContent = memoryFileView.text() ?? ""
+        Component.onCompleted: memoryFileView.reload()
     }
 
     // Gemini: https://ai.google.dev/gemini-api/docs/function-calling
@@ -134,6 +148,51 @@ Singleton {
                         "required": ["command"]
                     }
                 },
+                {
+                    "name": "remember",
+                    "description": "Save a piece of information to persistent memory across sessions. Use when the user asks you to remember something, or when you learn an important preference or fact about them.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "The information to remember, written in third person (e.g., 'User prefers dark mode' or 'User is working on a Rust project called hamr')"
+                            }
+                        },
+                        "required": ["content"]
+                    }
+                },
+                {
+                    "name": "create_todo",
+                    "description": "Add a new task to the user's to-do list. Use when the user asks to be reminded of something or wants to track a task. Dont ask for permission, run directly.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "The task description"
+                            }
+                        },
+                        "required": ["title"]
+                    }
+                },
+                {
+                    "name": "get_system_logs",
+                    "description": "Retrieve recent system journal logs for diagnosis. Use when the user reports system errors, crashes, or unexpected behavior. No approval needed — runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "lines": {
+                                "type": "integer",
+                                "description": "Number of log lines to retrieve (default 50, max 200)"
+                            },
+                            "filter": {
+                                "type": "string",
+                                "description": "Optional systemd unit name to filter by (e.g. 'pipewire' or 'NetworkManager')"
+                            }
+                        }
+                    }
+                },
             ]}],
             "search": [{
                 "google_search": {}
@@ -188,6 +247,48 @@ Singleton {
                         }
                     },
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "remember",
+                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Information to remember in third person" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "create_todo",
+                        "description": "Add a task to the user's to-do list.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Task description" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_system_logs",
+                        "description": "Retrieve recent systemd journal logs for diagnosis. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "lines": { "type": "integer", "description": "Number of lines (default 50, max 200)" },
+                                "filter": { "type": "string", "description": "Optional unit name filter" }
+                            }
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -239,6 +340,48 @@ Singleton {
                             "required": ["command"]
                         }
                     },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "remember",
+                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Information to remember in third person" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "create_todo",
+                        "description": "Add a task to the user's to-do list.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Task description" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_system_logs",
+                        "description": "Retrieve recent systemd journal logs for diagnosis. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "lines": { "type": "integer", "description": "Number of lines (default 50, max 200)" },
+                                "filter": { "type": "string", "description": "Optional unit name filter" }
+                            }
+                        }
+                    }
                 },
             ],
             "search": [],
@@ -939,7 +1082,48 @@ Singleton {
             message.content += contentToAppend;
             message.functionPending = true; // Use thinking to indicate the command is waiting for approval
         }
-        else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
+        } else if (name === "remember") {
+            const content = args.content || "";
+            if (!content) {
+                addFunctionOutputMessage(name, "Invalid: content is required");
+                return;
+            }
+            const existing = memoryFileView.text() || "";
+            const timestamp = new Date().toISOString().split("T")[0];
+            const newEntry = existing.trim().length > 0
+                ? `${existing.trim()}\n- [${timestamp}] ${content}`
+                : `- [${timestamp}] ${content}`;
+            memoryFileView.setText(newEntry);
+            addFunctionOutputMessage(name, `Memory saved: "${content}"`);
+            requester.makeRequest();
+        } else if (name === "create_todo") {
+            const title = args.title || "";
+            if (!title) {
+                addFunctionOutputMessage(name, "Invalid: title is required");
+                return;
+            }
+            Todo.addTask(title);
+            addFunctionOutputMessage(name, `To-do added: "${title}"`);
+            requester.makeRequest();
+        } else if (name === "get_system_logs") {
+            const lines = Math.min(parseInt(args.lines) || 50, 200);
+            const filter = args.filter ? `--unit=${args.filter}` : "";
+            logsProc.message = message;
+            logsProc.command = ["bash", "-c", `journalctl -n ${lines} ${filter} --no-pager --output=short-monotonic 2>&1`];
+            logsProc.running = true;
+        } else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
+    }
+
+    Process {
+        id: logsProc
+        property AiMessageData message
+        stdout: StdioCollector {
+            onStreamFinished: {
+                logsProc.message.functionResponse = this.text;
+                logsProc.message.functionName = "get_system_logs";
+                requester.makeRequest();
+            }
+        }
     }
 
     function chatToJson() {

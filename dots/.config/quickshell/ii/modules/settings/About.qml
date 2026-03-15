@@ -160,17 +160,17 @@ ContentPage {
             CustomIcon {
                 width: 80
                 height: 80
-                source: "ii-vynx"
+                source: "ii-lacuna"
             }
             ColumnLayout {
                 Layout.alignment: Qt.AlignVCenter
                 // spacing: 10
                 StyledText {
-                    text: Translation.tr("ii-vynx")
+                    text: Translation.tr("ii-lacuna")
                     font.pixelSize: Appearance.font.pixelSize.title
                 }
                 StyledText {
-                    text: "https://github.com/vaguesyntax/ii-vynx"
+                    text: "https://github.com/surprizeattackxx-dotcom/ii-lacuna"
                     font.pixelSize: Appearance.font.pixelSize.normal
                     textFormat: Text.MarkdownText
                     onLinkActivated: (link) => {
@@ -190,21 +190,21 @@ ContentPage {
                 materialIconFill: false
                 mainText: Translation.tr("Issues")
                 onClicked: {
-                    Qt.openUrlExternally("https://github.com/vaguesyntax/ii-vynx/issues")
+                    Qt.openUrlExternally("https://github.com/surprizeattackxx-dotcom/ii-lacuna/issues")
                 }
             }
             RippleButtonWithIcon {
                 materialIcon: "auto_stories"
                 mainText: Translation.tr("Documentation")
                 onClicked: {
-                    Qt.openUrlExternally("https://github.com/vaguesyntax/ii-vynx/wiki")
+                    Qt.openUrlExternally("https://github.com/surprizeattackxx-dotcom/ii-lacuna/wiki")
                 }
             }
             RippleButtonWithIcon {
                 materialIcon: "bug_report"
                 mainText: Translation.tr("Known Issues")
                 onClicked: {
-                    Qt.openUrlExternally("https://github.com/vaguesyntax/ii-vynx/wiki/Known-Issues-and-Limitations")
+                    Qt.openUrlExternally("https://github.com/surprizeattackxx-dotcom/ii-lacuna/wiki/Known-Issues-and-Limitations")
                 }
             }
             

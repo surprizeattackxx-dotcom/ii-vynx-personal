@@ -36,6 +36,9 @@ Singleton {
     property bool dashboardPanelOpen: false // formerly sidebarRightOpen
     property bool policiesPanelOpen: false  // formerly sidebarLeftOpen
 
+    // Pending text to pre-fill the AI chat input (cleared after AiChat consumes it)
+    property string pendingAiInput: ""
+
     readonly property bool effectiveLeftOpen: {
         switch (Config.options.sidebar.position) {
             case "default":  return policiesPanelOpen;  
@@ -74,6 +77,30 @@ Singleton {
         }
         
     }
+
+    GlobalShortcut {
+        name: "clipboardToAi"
+        description: "Open AI sidebar pre-filled with clipboard text"
+        onPressed: {
+            root.pendingAiInput = Quickshell.clipboardText ?? "";
+            root.policiesPanelOpen = true;
+            Persistent.states.sidebar.policies.tab = 0;
+        }
+    }
+
+    GlobalShortcut {
+        name: "voiceInput"
+        description: "Toggle voice recording for AI chat STT"
+        onPressed: {
+            root.policiesPanelOpen = true;
+            Persistent.states.sidebar.policies.tab = 0;
+            root.sttToggleRequested = !root.sttRecording;
+        }
+    }
+
+    // STT state — toggled by voiceInput shortcut, consumed by AiChat
+    property bool sttRecording: false
+    property bool sttToggleRequested: false
 
     GlobalShortcut {
         name: "workspaceNumber"

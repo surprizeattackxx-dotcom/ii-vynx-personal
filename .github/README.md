@@ -1,5 +1,5 @@
 <div align="center">
-     <h1>  [ ii-vynx hyprland dots ] </h1>
+     <h1>  [ ii-lacuna hyprland dots ] </h1>
 </div>
 
 
@@ -31,7 +31,7 @@ However there can (and will) be bugs **so don't expect stability here**. Use the
 
 Before saying “these dots are bloated,” keep in mind that there’s a toggle for everything.
 
-You can join this [**ii-vynx channel**](https://discord.com/channels/1393080422245863506/1457739857240653961) in end-4's official discord server to ask/chat about this repository.
+You can join this [**ii-lacuna channel**](https://discord.com/channels/1393080422245863506/1457739857240653961) in end-4's official discord server to ask/chat about this repository.
 
 <div align="center">
     <h2>• installation •</h2>
@@ -41,18 +41,18 @@ You can join this [**ii-vynx channel**](https://discord.com/channels/13930804222
 1. Clone this repository like this:
 
 ```
-git clone https://github.com/surprizeattackxx-dotcom/ii-vynx-personal.git --recurse-submodules
+git clone https://github.com/surprizeattackxx-dotcom/ii-lacuna-personal.git --recurse-submodules
 ```
 
 2. Run the setup script and follow the instructions:
 
 ```
-./setup-ii-vynx.sh
+./setup-ii-lacuna.sh
 ```
 
 Tip: You can see all flags you can use with `--help`:
 ```
-./setup-ii-vynx.sh --help
+./setup-ii-lacuna.sh --help
 ```
 
 <div align="center">
@@ -62,16 +62,16 @@ Tip: You can see all flags you can use with `--help`:
 Run the setup script:
 
 ```
-./setup-ii-vynx.sh
+./setup-ii-lacuna.sh
 ```
 
 <div align="center">
     <h2>• documentation •</h2>
 </div>
 
-Please refer to [this repository's wiki](https://github.com/vaguesyntax/ii-vynx/wiki) for detailed component descriptions and further information.
+Please refer to [this repository's wiki](https://github.com/surprizeattackxx-dotcom/ii-lacuna/wiki) for detailed component descriptions and further information.
 
-Please refer to [this wiki page about limitations](https://github.com/vaguesyntax/ii-vynx/wiki/Known-Issues-and-Limitations) to see current bugs, the details of known issues about this repo and limitations of hyprscrolling plugin implementation.
+Please refer to [this wiki page about limitations](https://github.com/surprizeattackxx-dotcom/ii-lacuna/wiki/Known-Issues-and-Limitations) to see current bugs, the details of known issues about this repo and limitations of hyprscrolling plugin implementation.
 
 
 <div align="center">

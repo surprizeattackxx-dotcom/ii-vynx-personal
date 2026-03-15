@@ -246,6 +246,59 @@ Item {
         }
     }
 
+    // ── Voice STT ─────────────────────────────────────────────────────────────
+    property bool sttRecording: false
+
+    Connections {
+        target: GlobalStates
+        function onPendingAiInputChanged() {
+            const text = GlobalStates.pendingAiInput;
+            if (text.length > 0) {
+                messageInputField.text = text;
+                messageInputField.forceActiveFocus();
+                GlobalStates.pendingAiInput = "";
+            }
+        }
+        function onSttToggleRequestedChanged() {
+            if (!GlobalStates.sttToggleRequested) return;
+            GlobalStates.sttToggleRequested = false;
+            root.toggleStt();
+        }
+    }
+
+    function toggleStt() {
+        if (root.sttRecording) {
+            startSttProc.running = false;
+            stopSttProc.running = true;
+            root.sttRecording = false;
+            GlobalStates.sttRecording = false;
+        } else {
+            startSttProc.running = true;
+            root.sttRecording = true;
+            GlobalStates.sttRecording = true;
+        }
+    }
+
+    Process {
+        id: startSttProc
+        command: ["bash", Directories.scriptPath + "/ai/start_stt.sh"]
+    }
+
+    Process {
+        id: stopSttProc
+        command: ["bash", Directories.scriptPath + "/ai/stop_stt.sh"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const transcript = this.text.trim();
+                if (transcript.length > 0) {
+                    messageInputField.text = transcript;
+                    messageInputField.forceActiveFocus();
+                }
+            }
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     component StatusItem: MouseArea {
         id: statusItem
         property string icon
@@ -917,6 +970,32 @@ Item {
                                 event.accepted = false;
                             }
                         }
+                    }
+                }
+
+                RippleButton { // Mic button (STT)
+                    id: micButton
+                    Layout.alignment: Qt.AlignTop
+                    Layout.leftMargin: 2
+                    implicitWidth: 40
+                    implicitHeight: 40
+                    buttonRadius: Appearance.rounding.small
+                    toggled: root.sttRecording
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleStt()
+                    }
+
+                    contentItem: MaterialSymbol {
+                        anchors.centerIn: parent
+                        horizontalAlignment: Text.AlignHCenter
+                        iconSize: 22
+                        color: root.sttRecording
+                            ? Appearance.m3colors.m3error
+                            : Appearance.m3colors.m3onSurfaceVariant
+                        text: root.sttRecording ? "stop_circle" : "mic"
                     }
                 }
 

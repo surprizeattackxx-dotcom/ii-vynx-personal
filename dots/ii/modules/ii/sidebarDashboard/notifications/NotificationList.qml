@@ -298,6 +298,19 @@ Item {
         }
         GroupButtonWithIcon {
             Layout.fillWidth: false
+            buttonIcon: "smart_toy"
+            enabled: Notifications.list.length > 0 && Config.options.policies.ai !== 0
+            onClicked: () => {
+                const digest = Notifications.list.map(n =>
+                    `[${n.appName}] ${n.summary}${n.body.length > 0 ? ": " + n.body : ""}`
+                ).join("\n");
+                Ai.sendUserMessage(Translation.tr("Please summarize these notifications concisely:\n") + digest);
+                GlobalStates.policiesPanelOpen = true;
+                Persistent.states.sidebar.policies.tab = 0;
+            }
+        }
+        GroupButtonWithIcon {
+            Layout.fillWidth: false
             buttonIcon: "delete_sweep"
             onClicked: () => {
                 Notifications.discardAllNotifications()

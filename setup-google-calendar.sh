@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sets up Google Calendar sync for the ii-vynx shell calendar widget.
+# Sets up Google Calendar sync for the ii-lacuna shell calendar widget.
 # Uses vdirsyncer to sync Google Calendar → local ICS files → khal reads them.
 #
 # You will need a Google OAuth2 client ID and secret:
