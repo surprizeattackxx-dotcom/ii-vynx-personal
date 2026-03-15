@@ -518,6 +518,25 @@ ContentPage {
                 }
             }
         }
+        ConfigRow {
+            uniform: true
+            ConfigSwitch {
+                buttonIcon: "alarm"
+                text: Translation.tr("Alarms")
+                checked: Config.options.bar.utilButtons.showAlarms
+                onCheckedChanged: {
+                    Config.options.bar.utilButtons.showAlarms = checked;
+                }
+            }
+            ConfigSwitch {
+                buttonIcon: "history"
+                text: Translation.tr("Notification history")
+                checked: Config.options.bar.utilButtons.showNotificationHistory
+                onCheckedChanged: {
+                    Config.options.bar.utilButtons.showNotificationHistory = checked;
+                }
+            }
+        }
     }
 
     ContentSection {

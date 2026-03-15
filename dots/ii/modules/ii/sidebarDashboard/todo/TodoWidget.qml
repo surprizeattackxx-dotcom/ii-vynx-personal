@@ -129,6 +129,7 @@ Item {
         onVisibleChanged: {
             if (!visible) {
                 todoInput.text = "";
+                dueDateInput.text = "";
                 fabButton.focus = true;
             }
         }
@@ -154,10 +155,17 @@ Item {
 
             function addTask() {
                 if (todoInput.text.length > 0) {
-                    Todo.addTask(todoInput.text);
-                    todoInput.text = "";
-                    root.showAddDialog = false;
-                    tabBar.setCurrentIndex(0); // Show unfinished tasks
+                    const item = { content: todoInput.text, done: false }
+                    const d = dueDateInput.text.trim()
+                    if (d.length > 0) {
+                        const parsed = new Date(d)
+                        if (!isNaN(parsed.getTime())) item.dueDate = parsed.getTime()
+                    }
+                    Todo.addItem(item)
+                    todoInput.text = ""
+                    dueDateInput.text = ""
+                    root.showAddDialog = false
+                    tabBar.setCurrentIndex(0)
                 }
             }
 
@@ -216,6 +224,35 @@ Item {
                         radius: 1
                     }
 
+                }
+
+                TextField {
+                    id: dueDateInput
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 16
+                    Layout.rightMargin: 16
+                    padding: 10
+                    visible: Config.options.todo?.showDueDates ?? true
+                    color: activeFocus ? Appearance.m3colors.m3onSurface : Appearance.m3colors.m3onSurfaceVariant
+                    renderType: Text.NativeRendering
+                    selectedTextColor: Appearance.m3colors.m3onSecondaryContainer
+                    selectionColor: Appearance.colors.colSecondaryContainer
+                    placeholderText: Translation.tr("Due date (YYYY-MM-DD, optional)")
+                    placeholderTextColor: Appearance.m3colors.m3outline
+
+                    background: Rectangle {
+                        anchors.fill: parent
+                        radius: Appearance.rounding.verysmall
+                        border.width: 2
+                        border.color: dueDateInput.activeFocus ? Appearance.colors.colPrimary : Appearance.m3colors.m3outline
+                        color: "transparent"
+                    }
+
+                    cursorDelegate: Rectangle {
+                        width: 1
+                        color: dueDateInput.activeFocus ? Appearance.colors.colPrimary : "transparent"
+                        radius: 1
+                    }
                 }
 
                 RowLayout {

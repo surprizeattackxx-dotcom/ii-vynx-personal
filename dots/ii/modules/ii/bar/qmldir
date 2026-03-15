@@ -1,4 +1,5 @@
 module qs.modules.ii.bar
+AlarmsPopup 1.0 AlarmsPopup.qml
 ActiveWindow 1.0 ActiveWindow.qml
 Bar 1.0 Bar.qml
 BarComponent 1.0 BarComponent.qml
@@ -13,6 +14,7 @@ ClockWidgetPopup 1.0 ClockWidgetPopup.qml
 DashboardPanelButton 1.0 DashboardPanelButton.qml
 HyprlandXkbIndicator 1.0 HyprlandXkbIndicator.qml
 Media 1.0 Media.qml
+NotificationHistoryPopup 1.0 NotificationHistoryPopup.qml
 NotificationUnreadCount 1.0 NotificationUnreadCount.qml
 PoliciesPanelButton 1.0 PoliciesPanelButton.qml
 RecordIndicator 1.0 RecordIndicator.qml

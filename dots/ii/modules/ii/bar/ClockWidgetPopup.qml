@@ -20,9 +20,19 @@ StyledPopup {
     }
 
     function getUpcomingTodos() {
+        const showDueDates = Config.options.todo?.showDueDates ?? true
+        const now = Date.now()
         const unfinished = Todo.list.filter(i => !i.done);
         if (unfinished.length === 0) return Translation.tr("No pending tasks");
-        let t = unfinished.slice(0, 5).map((i, n) => `  ${n + 1}. ${i.content}`).join('\n');
+        let t = unfinished.slice(0, 5).map((i, n) => {
+            let prefix = `  ${n + 1}. ${i.content}`
+            if (showDueDates && i.dueDate !== undefined && i.dueDate !== null) {
+                const overdue = i.dueDate < now
+                const dateStr = Qt.formatDateTime(new Date(i.dueDate), "MMM dd")
+                prefix += overdue ? ` ⚠ ${dateStr}` : ` · ${dateStr}`
+            }
+            return prefix
+        }).join('\n');
         if (unfinished.length > 5)
             t += `\n  ${Translation.tr("... and %1 more").arg(unfinished.length - 5)}`;
         return t;

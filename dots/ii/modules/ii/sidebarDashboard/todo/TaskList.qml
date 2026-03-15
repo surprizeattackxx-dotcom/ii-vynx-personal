@@ -52,6 +52,8 @@ Item {
                 implicitHeight: todoContentRowLayout.implicitHeight
                 color: Appearance.colors.colLayer2
                 radius: Appearance.rounding.small
+                border.width: (!todoItem.modelData.done && todoItem.modelData.dueDate !== undefined && todoItem.modelData.dueDate < Date.now()) ? 1 : 0
+                border.color: Appearance.colors.colError
 
                 ColumnLayout {
                     id: todoContentRowLayout
@@ -71,6 +73,18 @@ Item {
                         Layout.leftMargin: 10
                         Layout.rightMargin: 10
                         Layout.bottomMargin: todoListItemPadding
+                        Loader {
+                            active: (Config.options.todo?.showDueDates ?? true) && todoItem.modelData.dueDate !== undefined && todoItem.modelData.dueDate !== null
+                            visible: active
+                            Layout.fillWidth: false
+                            sourceComponent: StyledText {
+                                readonly property bool isOverdue: !todoItem.modelData.done && todoItem.modelData.dueDate < Date.now()
+                                text: Qt.formatDateTime(new Date(todoItem.modelData.dueDate), "MMM dd")
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                                color: isOverdue ? Appearance.colors.colError : Appearance.m3colors.m3outline
+                                font.weight: isOverdue ? Font.Bold : Font.Normal
+                            }
+                        }
                         Item {
                             Layout.fillWidth: true
                         }

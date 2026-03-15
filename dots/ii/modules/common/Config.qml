@@ -320,6 +320,8 @@ Singleton {
                     property bool showPerformanceProfileToggle: false
                     property bool showScreenRecord: false
                     property bool showClipboard: true
+                    property bool showAlarms: true
+                    property bool showNotificationHistory: true
                 }
                 property JsonObject workspaces: JsonObject {
                     property bool monochromeIcons: true
@@ -334,6 +336,9 @@ Singleton {
                     property bool useNerdFont: false
                     property int activeIndicatorOpacity: 100 // 0-100
                     property bool showPreviewOnHover: true
+                }
+                property JsonObject clipboard: JsonObject {
+                    property bool showPinned: true
                 }
                 property JsonObject weather: JsonObject {
                     property bool enable: false
@@ -591,6 +596,10 @@ Singleton {
             property JsonObject resources: JsonObject {
                 property int updateInterval: 3000
                 property int historyLength: 60
+            }
+
+            property JsonObject todo: JsonObject {
+                property bool showDueDates: true
             }
 
             property JsonObject lyricsService: JsonObject {

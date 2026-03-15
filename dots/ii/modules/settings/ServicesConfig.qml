@@ -123,6 +123,23 @@ ContentPage {
 
 
     ContentSection {
+        icon: "checklist"
+        title: Translation.tr("To Do")
+
+        ConfigSwitch {
+            buttonIcon: "calendar_today"
+            text: Translation.tr("Show due dates")
+            checked: Config.options.todo?.showDueDates ?? true
+            onCheckedChanged: {
+                Config.options.todo.showDueDates = checked;
+            }
+            StyledToolTip {
+                text: Translation.tr("Show due date input when adding tasks and highlight overdue items in red")
+            }
+        }
+    }
+
+    ContentSection {
         icon: "lyrics"
         title: Translation.tr("Lyrics")
 

@@ -63,6 +63,68 @@ Item {
         }
 
         Loader {
+            id: alarmsLoader
+            active: Config.options.bar.utilButtons.showAlarms ?? true
+            visible: active
+            sourceComponent: Item {
+                id: alarmButtonItem
+                implicitWidth: alarmBtn.implicitWidth
+                implicitHeight: alarmBtn.implicitHeight
+                property bool alarmsOpen: false
+
+                CircleUtilButton {
+                    id: alarmBtn
+                    extraActiveCondition: alarmButtonItem.alarmsOpen
+                    onClicked: alarmButtonItem.alarmsOpen = !alarmButtonItem.alarmsOpen
+                    MaterialSymbol {
+                        horizontalAlignment: Qt.AlignHCenter
+                        fill: alarmButtonItem.alarmsOpen ? 1 : 0
+                        text: "alarm"
+                        iconSize: Appearance.font.pixelSize.large
+                        color: Appearance.m3colors.m3onSurface
+                    }
+                }
+
+                AlarmsPopup {
+                    hoverTarget: alarmBtn
+                    alarmsActive: alarmButtonItem.alarmsOpen
+                    onCloseRequested: alarmButtonItem.alarmsOpen = false
+                }
+            }
+        }
+
+        Loader {
+            id: notifHistoryLoader
+            active: Config.options.bar.utilButtons.showNotificationHistory ?? true
+            visible: active
+            sourceComponent: Item {
+                id: notifHistButtonItem
+                implicitWidth: notifHistBtn.implicitWidth
+                implicitHeight: notifHistBtn.implicitHeight
+                property bool notifHistOpen: false
+
+                CircleUtilButton {
+                    id: notifHistBtn
+                    extraActiveCondition: notifHistButtonItem.notifHistOpen
+                    onClicked: notifHistButtonItem.notifHistOpen = !notifHistButtonItem.notifHistOpen
+                    MaterialSymbol {
+                        horizontalAlignment: Qt.AlignHCenter
+                        fill: notifHistButtonItem.notifHistOpen ? 1 : 0
+                        text: "history"
+                        iconSize: Appearance.font.pixelSize.large
+                        color: Appearance.m3colors.m3onSurface
+                    }
+                }
+
+                NotificationHistoryPopup {
+                    hoverTarget: notifHistBtn
+                    historyActive: notifHistButtonItem.notifHistOpen
+                    onCloseRequested: notifHistButtonItem.notifHistOpen = false
+                }
+            }
+        }
+
+        Loader {
             active: Config.options.bar.utilButtons.showScreenSnip
             visible: Config.options.bar.utilButtons.showScreenSnip
             sourceComponent: CircleUtilButton {
