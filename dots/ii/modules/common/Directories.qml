@@ -54,12 +54,16 @@ Singleton {
     property string cliphistDecode: FileUtils.trimFileProtocol(`/tmp/quickshell/media/cliphist`)
     property string screenshotTemp: "/tmp/quickshell/media/screenshot"
     property string wallpaperSwitchScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/switchwall.sh`)
+    property string darkModeToggleScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/toggle_darkmode.sh`)
+    property string applyCustomThemeScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/apply_custom_theme.sh`)
     property string defaultAiPrompts: Quickshell.shellPath("defaults/ai/prompts")
     property string defaultThemes: Quickshell.shellPath("defaults/themes")
     property string customThemes: `${Directories.shellConfig}/themes`
     property string userAiPrompts: FileUtils.trimFileProtocol(`${Directories.shellConfig}/ai/prompts`)
     property string userActions: FileUtils.trimFileProtocol(`${Directories.shellConfig}/actions`)
     property string aiChats: FileUtils.trimFileProtocol(`${Directories.state}/user/ai/chats`)
+    property string aiMemoryPath: FileUtils.trimFileProtocol(`${Directories.state}/user/ai/memory.md`)
+    property string aiSttTemp: "/tmp/quickshell/ai"
     property string aiTranslationScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/ai/gemini-translate.sh`)
     property string recordScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/videos/record.sh`)
     property string userAvatarPathAccountsService: FileUtils.trimFileProtocol(`/var/lib/AccountsService/icons/${SystemInfo.username}`)
@@ -71,6 +75,8 @@ Singleton {
     property string setHyprlockBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-hyprlock-bg.sh`)
     property string setSddmBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-sddm-bg.sh`)
     property string readSddmBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/read-sddm-bg.sh`)
+    property string setSddmThemeScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-sddm-theme.sh`)
+    property string readSddmThemeScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/read-sddm-theme.sh`)
     // Cleanup on init
     Component.onCompleted: {
         Quickshell.execDetached(["mkdir", "-p", `${shellConfig}`])
@@ -80,6 +86,7 @@ Singleton {
         Quickshell.execDetached(["bash", "-c", `rm -rf '${latexOutput}'; mkdir -p '${latexOutput}'`])
         Quickshell.execDetached(["bash", "-c", `rm -rf '${cliphistDecode}'; mkdir -p '${cliphistDecode}'`])
         Quickshell.execDetached(["mkdir", "-p", `${aiChats}`])
+        Quickshell.execDetached(["mkdir", "-p", `${aiSttTemp}`])
         Quickshell.execDetached(["mkdir", "-p", `${userActions}`])
         Quickshell.execDetached(["rm", "-rf", `${tempImages}`])
     }

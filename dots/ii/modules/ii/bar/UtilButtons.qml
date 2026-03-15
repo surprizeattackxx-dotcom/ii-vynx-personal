@@ -179,11 +179,7 @@ Item {
             sourceComponent: CircleUtilButton {
                 Layout.alignment: Qt.AlignVCenter
                 onClicked: event => {
-                    if (Appearance.m3colors.darkmode) {
-                        Hyprland.dispatch(`exec ${Directories.wallpaperSwitchScriptPath} --mode light --noswitch`);
-                    } else {
-                        Hyprland.dispatch(`exec ${Directories.wallpaperSwitchScriptPath} --mode dark --noswitch`);
-                    }
+                    Quickshell.execDetached([Directories.darkModeToggleScriptPath]);
                 }
                 MaterialSymbol {
                     horizontalAlignment: Qt.AlignHCenter

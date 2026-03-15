@@ -52,11 +52,7 @@ ContentPage {
             colBackground: Appearance.colors.colLayer2
 
             onClicked: {
-                Quickshell.execDetached([
-                    "bash",
-                    "-c",
-                    `${Directories.wallpaperSwitchScriptPath} --mode ${dark ? "dark" : "light"} --noswitch`
-                ])
+                Quickshell.execDetached([Directories.darkModeToggleScriptPath, dark ? "dark" : "light"])
             }
 
             StyledToolTip {

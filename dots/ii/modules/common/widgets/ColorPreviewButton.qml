@@ -28,13 +28,15 @@ RippleButton {
     property color accentColor
     readonly property bool toggled: Config.options.appearance.palette.type === root.colorScheme
 
-    readonly property string wallpaperPath: Config.options.background.wallpaperPath
     readonly property string scriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/generate_colors_material.py`)
-    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'" // some magic to extract hex colors from the script output
-    property string scriptArguments: ` --scheme ${root.colorScheme} --debug | ${root.grepCommand}`
 
-    property string fullCommand: `python3 ${root.scriptPath} --color "$(${root.accentColorCommand})" ${root.scriptArguments}`
-    readonly property string accentColorCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} --debug | grep "Accent color" | awk '{print $NF}'`
+    // Wallpaper scheme preview: run generate_colors_material with the current wallpaper
+    // and extract primary/primaryContainer/secondary from SCSS output ($varname: #hex;)
+    readonly property string wallpaperPreviewCommand:
+        `WALL="${Config.options.background.wallpaperPath}"; ` +
+        `[[ -z "$WALL" ]] && WALL=$(swww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //'); ` +
+        `"$HOME/.local/state/quickshell/.venv/bin/python3" "${root.scriptPath}" --path "$WALL" --scheme ${root.colorScheme === "scheme-auto" ? "scheme-tonal-spot" : root.colorScheme} 2>/dev/null ` +
+        `| grep -E '^\\$(primary|primaryContainer|secondary):' | grep -oE '#[0-9A-Fa-f]{6}'`
 
     property color primaryColor: "transparent"
     property color secondaryColor: "transparent"
@@ -55,31 +57,21 @@ RippleButton {
     implicitHeight: 64
 
     onClicked: {
+        Config.options.appearance.palette.type = root.colorScheme;
         if (customTheme) {
-            Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c",
-                                    `SCSS="\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
-                                    `cp '${root.customThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
-                                    `PRIMARY=$(jq -r '.primary' '${root.customThemeFilePath}') && ` +
-                                    `"$HOME/.local/state/quickshell/.venv/bin/python3" '${root.scriptPath}' --color "$PRIMARY" --mode dark > "$SCSS" && ` +
-                                    `${Directories.scriptPath}/colors/applycolor.sh`
-            ]);
+            Quickshell.execDetached([Directories.applyCustomThemeScriptPath, root.customThemeFilePath]);
         } else if (builtInTheme) {
-            Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c",
-                                    `SCSS="\${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/user/generated/material_colors.scss" && ` +
-                                    `cp '${root.builtInThemeFilePath}' '${Directories.generatedMaterialThemePath}' && ` +
-                                    `PRIMARY=$(jq -r '.primary' '${root.builtInThemeFilePath}') && ` +
-                                    `"$HOME/.local/state/quickshell/.venv/bin/python3" '${root.scriptPath}' --color "$PRIMARY" --mode dark > "$SCSS" && ` +
-                                    `${Directories.scriptPath}/colors/applycolor.sh`
-            ]);
+            Quickshell.execDetached([Directories.applyCustomThemeScriptPath, root.builtInThemeFilePath]);
         } else {
-            Config.options.appearance.palette.type = root.colorScheme;
-            Quickshell.execDetached(["bash", "-c", `${Directories.wallpaperSwitchScriptPath} --noswitch --type ${root.colorScheme}`]);
+            Quickshell.execDetached(["bash", "-c",
+                `WALL='${Config.options.background.wallpaperPath}'; ` +
+                `[[ -z "$WALL" ]] && WALL=$(swww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //'); ` +
+                `${Directories.wallpaperSwitchScriptPath} --noswitch --image "$WALL" --type ${root.colorScheme}`
+            ]);
         }
     }
 
-    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.fullCommand
+    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.wallpaperPreviewCommand
 
     onShouldLoadChanged: {
         if (shouldLoad && !loaded) {

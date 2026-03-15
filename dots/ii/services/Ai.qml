@@ -35,6 +35,10 @@ Singleton {
             // QML/JS doesn't support replaceAll, so use split/join
             prompt = prompt.split(key).join(root.promptSubstitutions[key]);
         }
+        const memory = root.aiMemoryContent.trim();
+        if (memory.length > 0) {
+            prompt += `\n\n## Your memory of the user\n${memory}`;
+        }
         return prompt;
     }
     // property var messages: []
@@ -75,7 +79,17 @@ Singleton {
         "{DISTRO}": SystemInfo.distroName,
         "{DATETIME}": `${DateTime.time}, ${DateTime.collapsedCalendarFormat}`,
         "{WINDOWCLASS}": ToplevelManager.activeToplevel?.appId ?? "Unknown",
-        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})` 
+        "{WINDOWTITLE}": ToplevelManager.activeToplevel?.title ?? "Unknown",
+        "{CLIPBOARD}": (Quickshell.clipboardText ?? "").substring(0, 300),
+        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})`
+    }
+
+    property string aiMemoryContent: ""
+    FileView {
+        id: memoryFileView
+        path: Directories.aiMemoryPath
+        onTextChanged: root.aiMemoryContent = memoryFileView.text() ?? ""
+        Component.onCompleted: memoryFileView.reload()
     }
 
     // Gemini: https://ai.google.dev/gemini-api/docs/function-calling
@@ -132,6 +146,223 @@ Singleton {
                             },
                         },
                         "required": ["command"]
+                    }
+                },
+                {
+                    "name": "remember",
+                    "description": "Save a piece of information to persistent memory across sessions. Use when the user asks you to remember something, or when you learn an important preference or fact about them.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "The information to remember, written in third person (e.g., 'User prefers dark mode')"
+                            }
+                        },
+                        "required": ["content"]
+                    }
+                },
+                {
+                    "name": "create_todo",
+                    "description": "Add a new task to the user's to-do list. Use when the user asks to be reminded of something or wants to track a task. Don't ask for permission, run directly.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "The task description"
+                            }
+                        },
+                        "required": ["title"]
+                    }
+                },
+                {
+                    "name": "get_system_logs",
+                    "description": "Retrieve recent system journal logs for diagnosis. Use when the user reports system errors or unexpected behavior. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "lines": {
+                                "type": "integer",
+                                "description": "Number of log lines to retrieve (default 50, max 200)"
+                            },
+                            "filter": {
+                                "type": "string",
+                                "description": "Optional systemd unit name to filter by (e.g. 'pipewire')"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "control_media",
+                    "description": "Control media playback via MPRIS/playerctl. Use for play, pause, skip, or get what's currently playing. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "Action to perform: 'play', 'pause', 'toggle', 'next', 'previous', or 'status'"
+                            }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "control_hyprland",
+                    "description": "Control Hyprland window manager. Switch workspaces, focus windows, move windows, etc. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "dispatch": {
+                                "type": "string",
+                                "description": "The hyprctl dispatch argument, e.g. 'workspace 2', 'movetoworkspace 3', 'focuswindow firefox', 'killactive'"
+                            }
+                        },
+                        "required": ["dispatch"]
+                    }
+                },
+                {
+                    "name": "forget_memory",
+                    "description": "Remove a specific memory entry that was previously saved. Use when the user asks you to forget something.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "The memory content to remove (partial match)"
+                            }
+                        },
+                        "required": ["content"]
+                    }
+                },
+                {
+                    "name": "export_chat",
+                    "description": "Export the current conversation as a markdown file to ~/Documents. Use when the user asks to save or export the chat.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "filename": {
+                                "type": "string",
+                                "description": "Optional filename without extension. Defaults to current date/time."
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "control_system",
+                    "description": "Control system volume, screen brightness, or power profile. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "Action: 'volume_up', 'volume_down', 'volume_set', 'volume_get', 'brightness_up', 'brightness_down', 'brightness_set', 'brightness_get', 'power_profile_get', 'power_profile_set'"
+                            },
+                            "value": {
+                                "type": "string",
+                                "description": "Value for set actions: volume percentage (0-100) or brightness percentage (0-100) or power profile name ('power-saver', 'balanced', 'performance')"
+                            }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "kill_process",
+                    "description": "Kill a running process by name. Requires user approval before executing.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "process": {
+                                "type": "string",
+                                "description": "Process name to kill (e.g. 'firefox', 'code', 'vlc')"
+                            }
+                        },
+                        "required": ["process"]
+                    }
+                },
+                {
+                    "name": "take_screenshot",
+                    "description": "Take a screenshot of the current screen and attach it to the conversation for analysis. Runs automatically.",
+                    "parameters": {}
+                },
+                {
+                    "name": "launch_app",
+                    "description": "Launch an application. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "description": "Application command or name to launch (e.g. 'firefox', 'dolphin', 'spotify')"
+                            }
+                        },
+                        "required": ["app"]
+                    }
+                },
+                {
+                    "name": "open_file",
+                    "description": "Open a file or URL with the default application via xdg-open. Runs automatically without approval.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "File path or URL to open"
+                            }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "notify",
+                    "description": "Send a desktop notification popup. Use to alert the user after completing a task. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": { "type": "string", "description": "Notification title" },
+                            "body": { "type": "string", "description": "Notification body text" }
+                        },
+                        "required": ["title"]
+                    }
+                },
+                {
+                    "name": "set_timer",
+                    "description": "Set a countdown timer that fires a desktop notification when it expires. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "seconds": { "type": "integer", "description": "Timer duration in seconds" },
+                            "label": { "type": "string", "description": "Label shown in the notification (e.g. 'Take a break')" }
+                        },
+                        "required": ["seconds"]
+                    }
+                },
+                {
+                    "name": "calculate",
+                    "description": "Evaluate a math expression and return the result. Supports Python math syntax. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "expression": { "type": "string", "description": "Math expression to evaluate, e.g. '2**32', 'math.sqrt(144)', '(12 * 8) / 3'" }
+                        },
+                        "required": ["expression"]
+                    }
+                },
+                {
+                    "name": "pick_color",
+                    "description": "Open the hyprpicker color picker so the user can pick a color from the screen. Returns the hex color. Runs automatically.",
+                    "parameters": {}
+                },
+                {
+                    "name": "manage_notes",
+                    "description": "Read or write persistent notes. Use to save information the user wants to keep, or read back saved notes.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
+                            "content": { "type": "string", "description": "Note content for 'add' action" }
+                        },
+                        "required": ["action"]
                     }
                 },
             ]}],
@@ -205,6 +436,235 @@ Singleton {
                         }
                     },
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "remember",
+                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Information to remember in third person" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "create_todo",
+                        "description": "Add a task to the user's to-do list.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Task description" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_system_logs",
+                        "description": "Retrieve recent systemd journal logs for diagnosis. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "lines": { "type": "integer", "description": "Number of lines (default 50, max 200)" },
+                                "filter": { "type": "string", "description": "Optional unit name filter" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_media",
+                        "description": "Control media playback via MPRIS/playerctl. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'play', 'pause', 'toggle', 'next', 'previous', 'status'" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_hyprland",
+                        "description": "Control Hyprland window manager via hyprctl dispatch. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "dispatch": { "type": "string", "description": "hyprctl dispatch argument, e.g. 'workspace 2', 'focuswindow firefox'" }
+                            },
+                            "required": ["dispatch"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "forget_memory",
+                        "description": "Remove a specific memory entry previously saved.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Memory entry to remove (partial match)" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "export_chat",
+                        "description": "Export the current conversation as a markdown file to ~/Documents.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "filename": { "type": "string", "description": "Optional filename without extension" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_system",
+                        "description": "Control system volume, brightness, or power profile. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: volume_up/down/set/get, brightness_up/down/set/get, power_profile_get/set" },
+                                "value": { "type": "string", "description": "Value for set actions (0-100 for volume/brightness, or profile name)" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "kill_process",
+                        "description": "Kill a running process by name. Requires user approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "process": { "type": "string", "description": "Process name to kill" }
+                            },
+                            "required": ["process"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "take_screenshot",
+                        "description": "Take a screenshot and attach it to the conversation for visual analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "launch_app",
+                        "description": "Launch an application by command name. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin')" }
+                            },
+                            "required": ["app"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "open_file",
+                        "description": "Open a file or URL with xdg-open. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "File path or URL to open" }
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "notify",
+                        "description": "Send a desktop notification popup. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Notification title" },
+                                "body": { "type": "string", "description": "Notification body" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "set_timer",
+                        "description": "Set a countdown timer that fires a desktop notification. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "seconds": { "type": "integer", "description": "Duration in seconds" },
+                                "label": { "type": "string", "description": "Timer label shown in notification" }
+                            },
+                            "required": ["seconds"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "calculate",
+                        "description": "Evaluate a math expression using Python. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "expression": { "type": "string", "description": "Python math expression, e.g. '2**32', 'math.sqrt(144)'" }
+                            },
+                            "required": ["expression"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "pick_color",
+                        "description": "Open hyprpicker so the user can pick a color from the screen. Returns hex color. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "manage_notes",
+                        "description": "Read or write persistent notes.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
+                                "content": { "type": "string", "description": "Note content for 'add' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -256,6 +716,235 @@ Singleton {
                             "required": ["command"]
                         }
                     },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "remember",
+                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Information to remember in third person" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "create_todo",
+                        "description": "Add a task to the user's to-do list.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Task description" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_system_logs",
+                        "description": "Retrieve recent systemd journal logs for diagnosis. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "lines": { "type": "integer", "description": "Number of lines (default 50, max 200)" },
+                                "filter": { "type": "string", "description": "Optional unit name filter" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_media",
+                        "description": "Control media playback via MPRIS/playerctl. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'play', 'pause', 'toggle', 'next', 'previous', 'status'" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_hyprland",
+                        "description": "Control Hyprland window manager via hyprctl dispatch. Runs automatically without approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "dispatch": { "type": "string", "description": "hyprctl dispatch argument, e.g. 'workspace 2', 'focuswindow firefox'" }
+                            },
+                            "required": ["dispatch"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "forget_memory",
+                        "description": "Remove a specific memory entry previously saved.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string", "description": "Memory entry to remove (partial match)" }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "export_chat",
+                        "description": "Export the current conversation as a markdown file to ~/Documents.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "filename": { "type": "string", "description": "Optional filename without extension" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "control_system",
+                        "description": "Control system volume, brightness, or power profile. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: volume_up/down/set/get, brightness_up/down/set/get, power_profile_get/set" },
+                                "value": { "type": "string", "description": "Value for set actions (0-100 for volume/brightness, or profile name)" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "kill_process",
+                        "description": "Kill a running process by name. Requires user approval.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "process": { "type": "string", "description": "Process name to kill" }
+                            },
+                            "required": ["process"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "take_screenshot",
+                        "description": "Take a screenshot and attach it to the conversation for visual analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "launch_app",
+                        "description": "Launch an application by command name. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin')" }
+                            },
+                            "required": ["app"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "open_file",
+                        "description": "Open a file or URL with xdg-open. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "File path or URL to open" }
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "notify",
+                        "description": "Send a desktop notification popup. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Notification title" },
+                                "body": { "type": "string", "description": "Notification body" }
+                            },
+                            "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "set_timer",
+                        "description": "Set a countdown timer that fires a desktop notification. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "seconds": { "type": "integer", "description": "Duration in seconds" },
+                                "label": { "type": "string", "description": "Timer label shown in notification" }
+                            },
+                            "required": ["seconds"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "calculate",
+                        "description": "Evaluate a math expression using Python. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "expression": { "type": "string", "description": "Python math expression, e.g. '2**32', 'math.sqrt(144)'" }
+                            },
+                            "required": ["expression"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "pick_color",
+                        "description": "Open hyprpicker so the user can pick a color from the screen. Returns hex color. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "manage_notes",
+                        "description": "Read or write persistent notes.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
+                                "content": { "type": "string", "description": "Note content for 'add' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
                 },
             ],
             "search": [],
@@ -862,8 +1551,13 @@ Singleton {
         command: ["bash", "-c", shellCommand]
         stdout: SplitParser {
             onRead: (output) => {
+                const MAX_OUTPUT = 4000;
                 commandExecutionProc.message.functionResponse += output + "\n\n";
-                const updatedContent = commandExecutionProc.baseMessageContent + `\n\n<think>\n<tt>${commandExecutionProc.message.functionResponse}</tt>\n</think>`;
+                let responseText = commandExecutionProc.message.functionResponse;
+                if (responseText.length > MAX_OUTPUT) {
+                    responseText = responseText.substring(0, MAX_OUTPUT) + "\n\n[Output truncated]";
+                }
+                const updatedContent = commandExecutionProc.baseMessageContent + `\n\n<think>\n<tt>${responseText}</tt>\n</think>`;
                 commandExecutionProc.message.rawContent = updatedContent;
                 commandExecutionProc.message.content = updatedContent;
             }
@@ -910,10 +1604,23 @@ Singleton {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `command`."));
                 return;
             }
-            const contentToAppend = `\n\n**Command execution request**\n\n\`\`\`command\n${args.command}\n\`\`\``;
-            message.rawContent += contentToAppend;
-            message.content += contentToAppend;
-            message.functionPending = true; // Use thinking to indicate the command is waiting for approval
+            // Auto-approve safe read-only commands
+            const safePattern = /^(ls(\s|$)|cat\s|pwd(\s|$)|df(\s|$)|ps(\s|$)|du\s|find\s|echo\s|date(\s|$)|whoami(\s|$)|uname(\s|$)|hostname(\s|$)|free(\s|$)|uptime(\s|$)|which\s|file\s|stat\s|wc\s|head\s|tail\s|lsblk(\s|$)|lscpu(\s|$)|ip\s|nmcli\s|env(\s|$)|printenv(\s|$)|systemctl status\s)/;
+            if (safePattern.test(args.command.trim())) {
+                const responseMessage = createFunctionOutputMessage(name, "", false);
+                const id = idForMessage(responseMessage);
+                root.messageIDs = [...root.messageIDs, id];
+                root.messageByID[id] = responseMessage;
+                commandExecutionProc.message = responseMessage;
+                commandExecutionProc.baseMessageContent = responseMessage.content;
+                commandExecutionProc.shellCommand = args.command;
+                commandExecutionProc.running = true;
+            } else {
+                const contentToAppend = `\n\n**Command execution request**\n\n\`\`\`command\n${args.command}\n\`\`\``;
+                message.rawContent += contentToAppend;
+                message.content += contentToAppend;
+                message.functionPending = true;
+            }
         } else if (name === "web_search") {
             if (!args.query || args.query.length === 0) {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `query`."));
@@ -927,8 +1634,247 @@ Singleton {
             commandExecutionProc.baseMessageContent = responseMessage.content;
             commandExecutionProc.shellCommand = `bash ~/.config/quickshell/scripts/ai-search.sh "${args.query.replace(/"/g, '\\"')}"`;
             commandExecutionProc.running = true;
+        } else if (name === "remember") {
+            const content = args.content || "";
+            if (!content) {
+                addFunctionOutputMessage(name, "Invalid: content is required");
+                return;
+            }
+            const existing = memoryFileView.text() || "";
+            const timestamp = new Date().toISOString().split("T")[0];
+            const newEntry = existing.trim().length > 0
+                ? `${existing.trim()}\n- [${timestamp}] ${content}`
+                : `- [${timestamp}] ${content}`;
+            memoryFileView.setText(newEntry);
+            addFunctionOutputMessage(name, `Memory saved: "${content}"`);
+            requester.makeRequest();
+        } else if (name === "create_todo") {
+            const title = args.title || "";
+            if (!title) {
+                addFunctionOutputMessage(name, "Invalid: title is required");
+                return;
+            }
+            Todo.addTask(title);
+            addFunctionOutputMessage(name, `To-do added: "${title}"`);
+            requester.makeRequest();
+        } else if (name === "get_system_logs") {
+            const lines = Math.min(parseInt(args.lines) || 50, 200);
+            const filter = args.filter ? `--unit=${args.filter}` : "";
+            logsProc.message = message;
+            logsProc.command = ["bash", "-c", `journalctl -n ${lines} ${filter} --no-pager --output=short-monotonic 2>&1`];
+            logsProc.running = true;
+        } else if (name === "control_media") {
+            const action = args.action || "status";
+            let cmd;
+            switch (action) {
+                case "play":     cmd = "playerctl play 2>&1 && echo 'Playing'"; break;
+                case "pause":    cmd = "playerctl pause 2>&1 && echo 'Paused'"; break;
+                case "toggle":   cmd = "playerctl play-pause 2>&1 && playerctl status 2>&1"; break;
+                case "next":     cmd = "playerctl next 2>&1 && echo 'Skipped to next'"; break;
+                case "previous": cmd = "playerctl previous 2>&1 && echo 'Went to previous'"; break;
+                default:         cmd = "playerctl metadata --format '{{artist}} - {{title}} [{{status}}]' 2>&1 || echo 'No media player found'";
+            }
+            const mediaMsg = createFunctionOutputMessage(name, "", false);
+            const mediaId = idForMessage(mediaMsg);
+            root.messageIDs = [...root.messageIDs, mediaId];
+            root.messageByID[mediaId] = mediaMsg;
+            commandExecutionProc.message = mediaMsg;
+            commandExecutionProc.baseMessageContent = mediaMsg.content;
+            commandExecutionProc.shellCommand = cmd;
+            commandExecutionProc.running = true;
+        } else if (name === "control_hyprland") {
+            const dispatch = args.dispatch || "";
+            if (!dispatch) {
+                addFunctionOutputMessage(name, "Invalid: dispatch is required");
+                requester.makeRequest();
+                return;
+            }
+            const hyprMsg = createFunctionOutputMessage(name, "", false);
+            const hyprId = idForMessage(hyprMsg);
+            root.messageIDs = [...root.messageIDs, hyprId];
+            root.messageByID[hyprId] = hyprMsg;
+            commandExecutionProc.message = hyprMsg;
+            commandExecutionProc.baseMessageContent = hyprMsg.content;
+            commandExecutionProc.shellCommand = `hyprctl dispatch ${dispatch} 2>&1`;
+            commandExecutionProc.running = true;
+        } else if (name === "forget_memory") {
+            const content = args.content || "";
+            if (!content) {
+                addFunctionOutputMessage(name, "Invalid: content is required");
+                requester.makeRequest();
+                return;
+            }
+            const existing = memoryFileView.text() || "";
+            const filtered = existing.split("\n").filter(line => !line.toLowerCase().includes(content.toLowerCase()));
+            memoryFileView.setText(filtered.join("\n"));
+            addFunctionOutputMessage(name, `Memory entry removed: "${content}"`);
+            requester.makeRequest();
+        } else if (name === "export_chat") {
+            const ts = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
+            const filename = (args.filename || ts).replace(/[^a-zA-Z0-9_\-]/g, "_");
+            const lines = root.messageIDs.map(id => {
+                const msg = root.messageByID[id];
+                if (msg.role === root.interfaceRole) return "";
+                const speaker = msg.role === "user" ? "You" : "AI";
+                return `## ${speaker}\n\n${msg.rawContent}\n`;
+            }).filter(l => l.length > 0);
+            const markdown = `# AI Chat Export\n\n${lines.join("\n---\n\n")}`;
+            chatExportFile.path = Qt.resolvedUrl(`${Directories.home}/Documents/${filename}.md`);
+            chatExportFile.setText(markdown);
+            addFunctionOutputMessage(name, `Chat exported to ~/Documents/${filename}.md`);
+            requester.makeRequest();
+        } else if (name === "control_system") {
+            const action = args.action || "";
+            const value = args.value || "10";
+            let cmd;
+            switch (action) {
+                case "volume_up":         cmd = `wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ && wpctl get-volume @DEFAULT_AUDIO_SINK@`; break;
+                case "volume_down":       cmd = `wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- && wpctl get-volume @DEFAULT_AUDIO_SINK@`; break;
+                case "volume_set":        cmd = `wpctl set-volume @DEFAULT_AUDIO_SINK@ ${parseInt(value) / 100} && wpctl get-volume @DEFAULT_AUDIO_SINK@`; break;
+                case "volume_get":        cmd = `wpctl get-volume @DEFAULT_AUDIO_SINK@`; break;
+                case "brightness_up":     cmd = `brightnessctl set 10%+ && echo "Brightness: $(brightnessctl get)/$(brightnessctl max)"`; break;
+                case "brightness_down":   cmd = `brightnessctl set 10%- && echo "Brightness: $(brightnessctl get)/$(brightnessctl max)"`; break;
+                case "brightness_set":    cmd = `brightnessctl set ${value}% && echo "Brightness: $(brightnessctl get)/$(brightnessctl max)"`; break;
+                case "brightness_get":    cmd = `echo "Brightness: $(brightnessctl get)/$(brightnessctl max)"`; break;
+                case "power_profile_get": cmd = `powerprofilesctl get 2>/dev/null || echo 'powerprofilesctl not available'`; break;
+                case "power_profile_set": cmd = `powerprofilesctl set ${value} 2>/dev/null && echo "Power profile: ${value}"` ; break;
+                default: cmd = `echo 'Unknown action: ${action}'`;
+            }
+            const sysMsg = createFunctionOutputMessage(name, "", false);
+            const sysId = idForMessage(sysMsg);
+            root.messageIDs = [...root.messageIDs, sysId];
+            root.messageByID[sysId] = sysMsg;
+            commandExecutionProc.message = sysMsg;
+            commandExecutionProc.baseMessageContent = sysMsg.content;
+            commandExecutionProc.shellCommand = cmd;
+            commandExecutionProc.running = true;
+        } else if (name === "kill_process") {
+            const target = args.process || "";
+            if (!target) {
+                addFunctionOutputMessage(name, "Invalid: process is required");
+                return;
+            }
+            const killCmd = `pkill -f "${target.replace(/"/g, '\\"')}" 2>&1 && echo "Killed: ${target}" || echo "No process found: ${target}"`;
+            message.functionCall.args.command = killCmd;
+            const contentToAppend = `\n\n**Kill process request**\n\n\`\`\`command\n${killCmd}\n\`\`\``;
+            message.rawContent += contentToAppend;
+            message.content += contentToAppend;
+            message.functionPending = true;
+        } else if (name === "take_screenshot") {
+            const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
+            screenshotProc.targetPath = CF.FileUtils.trimFileProtocol(screenshotPath);
+            screenshotProc.message = message;
+            screenshotProc.command = ["bash", "-c", `grim "${CF.FileUtils.trimFileProtocol(screenshotPath)}" 2>&1`];
+            screenshotProc.running = true;
+        } else if (name === "launch_app") {
+            const app = args.app || "";
+            if (!app) { addFunctionOutputMessage(name, "Invalid: app is required"); return; }
+            Quickshell.execDetached(["bash", "-c", `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1`]);
+            addFunctionOutputMessage(name, `Launched: ${app}`);
+            requester.makeRequest();
+        } else if (name === "open_file") {
+            const path = args.path || "";
+            if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); return; }
+            Quickshell.execDetached(["xdg-open", path]);
+            addFunctionOutputMessage(name, `Opened: ${path}`);
+            requester.makeRequest();
+        } else if (name === "notify") {
+            const title = args.title || "AI Assistant";
+            const body = args.body || "";
+            Quickshell.execDetached(["notify-send", title, body]);
+            addFunctionOutputMessage(name, `Notification sent: "${title}"`);
+            requester.makeRequest();
+        } else if (name === "set_timer") {
+            const seconds = Math.max(1, parseInt(args.seconds) || 60);
+            const label = args.label || "Timer";
+            Quickshell.execDetached(["bash", "-c",
+                `(sleep ${seconds} && notify-send "Timer: ${label.replace(/"/g, '\\"')}" "Time's up!" --urgency=normal) &`
+            ]);
+            addFunctionOutputMessage(name, `Timer set: ${label} in ${seconds}s`);
+            requester.makeRequest();
+        } else if (name === "calculate") {
+            const expression = args.expression || "";
+            if (!expression) { addFunctionOutputMessage(name, "Invalid: expression is required"); return; }
+            const calcMsg = createFunctionOutputMessage(name, "", false);
+            const calcId = idForMessage(calcMsg);
+            root.messageIDs = [...root.messageIDs, calcId];
+            root.messageByID[calcId] = calcMsg;
+            commandExecutionProc.message = calcMsg;
+            commandExecutionProc.baseMessageContent = calcMsg.content;
+            commandExecutionProc.shellCommand = `python3 -c "import math; print(${expression.replace(/"/g, '\\"')})" 2>&1`;
+            commandExecutionProc.running = true;
+        } else if (name === "pick_color") {
+            const colorMsg = createFunctionOutputMessage(name, "", false);
+            const colorId = idForMessage(colorMsg);
+            root.messageIDs = [...root.messageIDs, colorId];
+            root.messageByID[colorId] = colorMsg;
+            commandExecutionProc.message = colorMsg;
+            commandExecutionProc.baseMessageContent = colorMsg.content;
+            commandExecutionProc.shellCommand = `hyprpicker 2>/dev/null || echo 'hyprpicker not installed'`;
+            commandExecutionProc.running = true;
+        } else if (name === "manage_notes") {
+            const action = args.action || "list";
+            const content = args.content || "";
+            if (action === "list" || action === "read") {
+                const text = notesFileView.text() || "[]";
+                try {
+                    const notes = JSON.parse(text);
+                    const formatted = notes.length === 0 ? "No notes saved." :
+                        notes.map((n, i) => `${i + 1}. [${n.timestamp}] ${n.content}`).join("\n");
+                    addFunctionOutputMessage(name, formatted);
+                } catch(e) {
+                    addFunctionOutputMessage(name, text);
+                }
+                requester.makeRequest();
+            } else if (action === "add") {
+                if (!content) { addFunctionOutputMessage(name, "Invalid: content is required for add"); requester.makeRequest(); return; }
+                let notes = [];
+                try { notes = JSON.parse(notesFileView.text() || "[]"); } catch(e) {}
+                notes.push({ timestamp: new Date().toISOString().split("T")[0], content: content });
+                notesFileView.setText(JSON.stringify(notes));
+                addFunctionOutputMessage(name, `Note added: "${content}"`);
+                requester.makeRequest();
+            } else if (action === "clear") {
+                notesFileView.setText("[]");
+                addFunctionOutputMessage(name, "All notes cleared.");
+                requester.makeRequest();
+            } else {
+                addFunctionOutputMessage(name, `Unknown action: ${action}. Use 'list', 'add', or 'clear'.`);
+                requester.makeRequest();
+            }
+        } else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
+    }
+
+    Process {
+        id: logsProc
+        property AiMessageData message
+        stdout: StdioCollector {
+            onStreamFinished: {
+                logsProc.message.functionResponse = this.text;
+                logsProc.message.functionName = "get_system_logs";
+                requester.makeRequest();
+            }
         }
-        else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
+    }
+
+    Process {
+        id: screenshotProc
+        property string targetPath: ""
+        property AiMessageData message
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.pendingFilePath = screenshotProc.targetPath;
+                addFunctionOutputMessage("take_screenshot", "Screenshot taken. Now analyzing...");
+                requester.makeRequest();
+            }
+        }
+    }
+
+    FileView {
+        id: notesFileView
+        path: Qt.resolvedUrl(Directories.aiMemoryPath.replace("memory.md", "notes.json"))
+        blockLoading: true
+        watchChanges: false
     }
 
     function chatToJson() {
@@ -958,6 +1904,11 @@ Singleton {
         property string chatName: ""
         path: chatName.length > 0 ? `${Directories.aiChats}/${chatName}.json` : ""
         blockLoading: true // Prevent race conditions
+    }
+
+    FileView {
+        id: chatExportFile
+        blockLoading: true
     }
 
     /**

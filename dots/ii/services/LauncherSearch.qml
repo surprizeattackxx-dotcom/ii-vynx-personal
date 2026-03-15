@@ -70,7 +70,7 @@ Singleton {
         {
             action: "dark",
             execute: () => {
-                Quickshell.execDetached([Directories.wallpaperSwitchScriptPath, "--mode", "dark", "--noswitch"]);
+                Quickshell.execDetached([Directories.darkModeToggleScriptPath, "dark"]);
             }
         },
         {
@@ -82,7 +82,7 @@ Singleton {
         {
             action: "light",
             execute: () => {
-                Quickshell.execDetached([Directories.wallpaperSwitchScriptPath, "--mode", "light", "--noswitch"]);
+                Quickshell.execDetached([Directories.darkModeToggleScriptPath, "light"]);
             }
         },
         {
