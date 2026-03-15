@@ -152,6 +152,61 @@ Item {
             }
         },
         {
+            name: "capabilities",
+            description: Translation.tr("Show all AI tools and what you can ask for"),
+            execute: () => {
+                Ai.addMessage(`## What I can do
+
+### 🖥️ System
+- Run shell commands *(asks approval for anything destructive)*
+- Kill a process — *"kill firefox"*
+- View system logs — *"show recent errors"*
+- Control volume & brightness — *"set volume to 50"*
+- Get/set power profile — *"switch to performance mode"*
+
+### 🪟 Desktop
+- Control Hyprland — *"move this window to workspace 3"*
+- Launch an app — *"open dolphin"*
+- Open a file or URL — *"open ~/Documents/notes.txt"*
+- Dark/light mode — *"switch to dark mode"*
+
+### 📷 Vision
+- Analyze your screen — *"what's on my screen?"* (uses \`take_screenshot\`)
+- Capture a region — *"analyze this part of my screen"* (uses \`capture_region\`)
+- Extract text from screen — *"read the text in that window"* (uses \`ocr_region\`)
+- Read clipboard image — *"analyze the image I copied"* (uses \`read_clipboard_image\`)
+
+### 🎵 Media
+- Play / pause / skip — *"pause music"*, *"skip to next"*
+- Get currently playing — *"what's playing?"*
+
+### 🔊 TTS
+- Read text aloud — *"read that back to me"* (uses \`speak\`)
+
+### 🗂️ Productivity
+- Add a to-do — *"remind me to call John"*
+- Set a timer — *"set a 10 minute timer"*
+- Send a notification — *"notify me when done"*
+- Save/read notes — *"save a note: ..."*
+- Export this chat — *"export chat"*
+
+### 🔧 Shell Config
+- Read config — *"show my shell config"*
+- Change settings — *"disable the bar border"*
+
+### 🧠 Memory
+- Remember something — *"remember I prefer dark mode"*
+- Forget something — *"forget my name"*
+- Web search — *"search for latest Hyprland news"*
+- Calculate — *"what is sin(45°)?"*
+- Pick a color — *"open color picker"*
+
+### 💬 Context always available
+- Active window, open windows, clipboard, current media, date/time, distro
+`, Ai.interfaceRole);
+            }
+        },
+        {
             name: "test",
             description: Translation.tr("Markdown test"),
             execute: () => {
