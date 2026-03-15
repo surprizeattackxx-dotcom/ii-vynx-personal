@@ -272,11 +272,64 @@ ContentPage {
         ContentSubsection {
             title: Translation.tr("Backgrounds")
 
+            // ── Processes ────────────────────────────────────────────────
+            // kdialog picker → output is the chosen file path
+            Process {
+                id: hyprlockPickerProc
+                stdout: SplitParser {
+                    splitMarker: "\n"
+                    onRead: data => {
+                        const path = data.trim()
+                        if (path.length > 0) setHyprlockProc.setPath(path)
+                    }
+                }
+            }
+            Process {
+                id: sddmPickerProc
+                stdout: SplitParser {
+                    splitMarker: "\n"
+                    onRead: data => {
+                        const path = data.trim()
+                        if (path.length > 0) {
+                            setSddmProc.command = ["pkexec", "bash", Directories.setSddmBgScriptPath, path]
+                            setSddmProc.running = true
+                        }
+                    }
+                }
+            }
+            Process {
+                id: setHyprlockProc
+                function setPath(imgPath) {
+                    command = ["bash", Directories.setHyprlockBgScriptPath, imgPath]
+                    running = true
+                }
+                function clearPath() {
+                    command = ["bash", "-c",
+                        `sed -i 's|^\\(\\s*\\)path\\s*=.*|\\1color = rgba(181818FF)|' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf"`]
+                    running = true
+                }
+                onExited: hyprlockReadProc.running = true
+            }
+            Process { id: setSddmProc }
+
+            // Read current hyprlock path on load
+            Process {
+                id: hyprlockReadProc
+                command: ["bash", "-c",
+                    `grep -oP '(?<=^\\s{0,8}path\\s=\\s).*' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf" 2>/dev/null | head -1`]
+                stdout: SplitParser {
+                    splitMarker: "\n"
+                    onRead: data => { hyprlockCurrentPath = data.trim() }
+                }
+                Component.onCompleted: running = true
+            }
+
+            property string hyprlockCurrentPath: ""
+
             // ── Hyprlock background ──────────────────────────────────────
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-
                 MaterialSymbol {
                     text: "lock"
                     iconSize: Appearance.font.pixelSize.normal
@@ -289,80 +342,42 @@ ContentPage {
                     color: Appearance.colors.colOnLayer1
                 }
             }
-
-            // Preview of current hyprlock bg path
             StyledText {
-                id: hyprlockBgLabel
                 Layout.fillWidth: true
-                text: hyprlockBgPath.length > 0
-                    ? hyprlockBgPath
+                text: parent.hyprlockCurrentPath.length > 0
+                    ? parent.hyprlockCurrentPath
                     : Translation.tr("(solid color — no image set)")
                 font.pixelSize: Appearance.font.pixelSize.smaller
                 color: Appearance.m3colors.m3outline
                 elide: Text.ElideLeft
-                wrapMode: Text.NoWrap
-
-                property string hyprlockBgPath: {
-                    // Parse path= from hyprlock.conf via a property binding updated by setHyprlockProc
-                    return hyprlockPathReader.content
-                }
             }
-
-            // FileView to read current hyprlock bg path
-            QtObject {
-                id: hyprlockPathReader
-                property string content: ""
-                Component.onCompleted: readPath()
-                function readPath() {
-                    readProc.running = true
-                }
-            }
-            Process {
-                id: readProc
-                command: ["bash", "-c",
-                    `grep -oP '(?<=^\\s{0,8}path\\s=\\s).*' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf" 2>/dev/null | head -1`]
-                stdout: SplitParser {
-                    splitMarker: "\n"
-                    onRead: data => { hyprlockPathReader.content = data.trim() }
-                }
-            }
-
             ConfigRow {
                 uniform: false
                 RippleButton {
-                    buttonText: Translation.tr("Use current wallpaper")
+                    buttonText: Translation.tr("Browse…")
                     buttonRadius: Appearance.rounding.small
                     Layout.fillWidth: true
-                    enabled: Config.options.background.wallpaperPath.length > 0
-                    onClicked: setHyprlockProc.setPath(Config.options.background.wallpaperPath)
+                    onClicked: {
+                        hyprlockPickerProc.command = ["kdialog", "--getopenfilename",
+                            FileUtils.trimFileProtocol(Directories.pictures),
+                            "*.jpg *.jpeg *.png *.webp *.gif *.bmp|Images",
+                            "--title", Translation.tr("Choose lock screen background")]
+                        hyprlockPickerProc.running = true
+                    }
                 }
                 RippleButton {
-                    buttonText: Translation.tr("Clear (use color)")
+                    buttonText: Translation.tr("Clear")
                     buttonRadius: Appearance.rounding.small
                     Layout.fillWidth: false
+                    enabled: parent.parent.hyprlockCurrentPath.length > 0
                     onClicked: setHyprlockProc.clearPath()
                 }
-            }
-
-            Process {
-                id: setHyprlockProc
-                function setPath(imgPath) {
-                    command = ["bash", Directories.setHyprlockBgScriptPath, imgPath]
-                    running = true
-                }
-                function clearPath() {
-                    command = ["bash", "-c",
-                        `sed -i 's|^\\(\\s*\\)path\\s*=.*|\\1color = rgba(181818FF)|' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf"`]
-                    running = true
-                }
-                onExited: readProc.running = true
             }
 
             // ── SDDM background ──────────────────────────────────────────
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-
                 MaterialSymbol {
                     text: "login"
                     iconSize: Appearance.font.pixelSize.normal
@@ -375,23 +390,18 @@ ContentPage {
                     color: Appearance.colors.colOnLayer1
                 }
             }
-
             RippleButton {
-                buttonText: Translation.tr("Use current wallpaper")
+                buttonText: Translation.tr("Browse…")
                 buttonRadius: Appearance.rounding.small
                 Layout.fillWidth: true
-                enabled: Config.options.background.wallpaperPath.length > 0
                 onClicked: {
-                    setSddmProc.command = [
-                        "pkexec", "bash", Directories.setSddmBgScriptPath,
-                        Config.options.background.wallpaperPath
-                    ]
-                    setSddmProc.running = true
+                    sddmPickerProc.command = ["kdialog", "--getopenfilename",
+                        FileUtils.trimFileProtocol(Directories.pictures),
+                        "*.jpg *.jpeg *.png *.webp *.gif *.bmp|Images",
+                        "--title", Translation.tr("Choose SDDM login background")]
+                    sddmPickerProc.running = true
                 }
             }
-
-            Process { id: setSddmProc }
-
             StyledText {
                 Layout.fillWidth: true
                 text: Translation.tr("(requires admin password via pkexec)")
