@@ -56,6 +56,7 @@ StyledPopup {
                         id: labelInput
                         Layout.fillWidth: true
                         placeholderText: Translation.tr("Label (e.g. Take meds)")
+                        Keys.onReturnPressed: addAlarmButton.addAlarm()
                     }
 
                     RowLayout {
@@ -66,7 +67,6 @@ StyledPopup {
                             placeholderText: "HH:MM"
                             maximumLength: 5
                             inputMethodHints: Qt.ImhDigitsOnly
-
                             Keys.onReturnPressed: addAlarmButton.addAlarm()
                         }
                         CircleUtilButton {
@@ -83,7 +83,7 @@ StyledPopup {
                                 const target = new Date()
                                 target.setHours(h, m, 0, 0)
                                 if (target <= now) target.setDate(target.getDate() + 1)
-                                AlarmService.addAlarm(labelInput.text.trim(), target.getTime())
+                                AlarmService.addAlarm(labelInput.text.trim(), target.getTime(), repeatSelector.currentRepeat)
                                 labelInput.text = ""
                                 timeInput.text = ""
                             }
@@ -94,6 +94,39 @@ StyledPopup {
                                 text: "add_alarm"
                                 iconSize: Appearance.font.pixelSize.large
                                 color: Appearance.m3colors.m3onSurface
+                            }
+                        }
+                    }
+
+                    // Repeat selector
+                    RowLayout {
+                        id: repeatSelector
+                        spacing: 4
+                        Layout.fillWidth: true
+
+                        property string currentRepeat: "none"
+
+                        Repeater {
+                            model: [
+                                { key: "none",     label: Translation.tr("Once") },
+                                { key: "daily",    label: Translation.tr("Daily") },
+                                { key: "weekdays", label: Translation.tr("Weekdays") }
+                            ]
+                            delegate: RippleButton {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                buttonText: modelData.label
+                                toggled: repeatSelector.currentRepeat === modelData.key
+                                buttonRadius: Appearance.rounding.small
+                                onClicked: repeatSelector.currentRepeat = modelData.key
+                                contentItem: StyledText {
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: modelData.label
+                                    font.pixelSize: Appearance.font.pixelSize.smaller
+                                    color: repeatSelector.currentRepeat === modelData.key
+                                        ? Appearance.colors.colPrimary
+                                        : Appearance.m3colors.m3outline
+                                }
                             }
                         }
                     }
@@ -119,48 +152,72 @@ StyledPopup {
                         required property var modelData
                         required property int index
                         width: alarmList.width - 6
-                        implicitHeight: alarmRow.implicitHeight + 10
+                        implicitHeight: alarmCol.implicitHeight + 10
                         radius: Appearance.rounding.small
                         color: Appearance.m3colors.m3surfaceContainerHigh
                         opacity: modelData.fired ? 0.5 : 1.0
 
-                        RowLayout {
-                            id: alarmRow
+                        ColumnLayout {
+                            id: alarmCol
                             anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 8; rightMargin: 4 }
-                            spacing: 6
+                            spacing: 2
 
-                            MaterialSymbol {
-                                text: modelData.fired ? "alarm_off" : "alarm_on"
-                                iconSize: Appearance.font.pixelSize.normal
-                                color: modelData.fired ? Appearance.colors.colSubtext : Appearance.colors.colPrimary
-                            }
-
-                            ColumnLayout {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 1
-                                StyledText {
-                                    text: modelData.label
-                                    font.pixelSize: Appearance.font.pixelSize.small
-                                    font.weight: Font.Medium
-                                    color: Appearance.colors.colOnLayer1
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                                StyledText {
-                                    text: Qt.formatDateTime(new Date(modelData.time), "ddd hh:mm") + (modelData.fired ? " — " + Translation.tr("fired") : "")
-                                    font.pixelSize: Appearance.font.pixelSize.smaller
-                                    color: modelData.fired ? Appearance.colors.colSubtext : Appearance.m3colors.m3outline
-                                }
-                            }
+                                spacing: 6
 
-                            CircleUtilButton {
-                                implicitWidth: 22; implicitHeight: 22
-                                onClicked: AlarmService.deleteAlarm(modelData.id)
                                 MaterialSymbol {
-                                    anchors.centerIn: parent
-                                    text: "close"
-                                    iconSize: Appearance.font.pixelSize.small
-                                    color: Appearance.m3colors.m3onSurfaceVariant
+                                    text: modelData.fired ? "alarm_off" : (modelData.repeat !== "none" ? "alarm_on" : "alarm")
+                                    iconSize: Appearance.font.pixelSize.normal
+                                    color: modelData.fired ? Appearance.colors.colSubtext : Appearance.colors.colPrimary
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    StyledText {
+                                        text: modelData.label
+                                        font.pixelSize: Appearance.font.pixelSize.small
+                                        font.weight: Font.Medium
+                                        color: Appearance.colors.colOnLayer1
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+                                    StyledText {
+                                        text: {
+                                            let t = Qt.formatDateTime(new Date(modelData.time), "ddd hh:mm")
+                                            if (modelData.fired) t += " — " + Translation.tr("fired")
+                                            else if (modelData.repeat === "daily") t += " · " + Translation.tr("daily")
+                                            else if (modelData.repeat === "weekdays") t += " · " + Translation.tr("weekdays")
+                                            return t
+                                        }
+                                        font.pixelSize: Appearance.font.pixelSize.smaller
+                                        color: modelData.fired ? Appearance.colors.colSubtext : Appearance.m3colors.m3outline
+                                    }
+                                }
+
+                                // Snooze button — only for fired one-shot alarms
+                                CircleUtilButton {
+                                    visible: modelData.fired && modelData.repeat === "none"
+                                    implicitWidth: 22; implicitHeight: 22
+                                    onClicked: AlarmService.snoozeAlarm(modelData.id)
+                                    MaterialSymbol {
+                                        anchors.centerIn: parent
+                                        text: "snooze"
+                                        iconSize: Appearance.font.pixelSize.small
+                                        color: Appearance.colors.colPrimary
+                                    }
+                                }
+
+                                CircleUtilButton {
+                                    implicitWidth: 22; implicitHeight: 22
+                                    onClicked: AlarmService.deleteAlarm(modelData.id)
+                                    MaterialSymbol {
+                                        anchors.centerIn: parent
+                                        text: "close"
+                                        iconSize: Appearance.font.pixelSize.small
+                                        color: Appearance.m3colors.m3onSurfaceVariant
+                                    }
                                 }
                             }
                         }
