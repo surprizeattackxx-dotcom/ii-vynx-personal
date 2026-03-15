@@ -9,14 +9,27 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    NotificationListView { // Scrollable window
+    property bool showHistory: false
+
+    function timeAgo(epochMs) {
+        const diff = Date.now() - epochMs
+        const m = Math.floor(diff / 60000)
+        if (m < 1)  return Translation.tr("just now")
+        if (m < 60) return m + Translation.tr("m ago")
+        const h = Math.floor(m / 60)
+        if (h < 24) return h + Translation.tr("h ago")
+        return Math.floor(h / 24) + Translation.tr("d ago")
+    }
+
+    // Grouped live view
+    NotificationListView {
         id: listview
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: replyBarContainer.top
         anchors.bottomMargin: 5
-
+        visible: !root.showHistory
         clip: true
         layer.enabled: true
         layer.effect: OpacityMask {
@@ -26,8 +39,92 @@ Item {
                 radius: Appearance.rounding.normal
             }
         }
-
         popup: false
+    }
+
+    // Flat chronological history view
+    ListView {
+        id: historyView
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: replyBarContainer.top
+        anchors.bottomMargin: 5
+        visible: root.showHistory
+        clip: true
+        spacing: 3
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        model: {
+            const sorted = Notifications.list.slice()
+            sorted.sort((a, b) => b.time - a.time)
+            return sorted
+        }
+
+        delegate: Rectangle {
+            required property var modelData
+            required property int index
+            width: historyView.width
+            implicitHeight: histCol.implicitHeight + 10
+            radius: Appearance.rounding.small
+            color: Appearance.m3colors.m3surfaceContainerHigh
+            border.width: 1
+            border.color: modelData.urgency === "critical"
+                ? Qt.rgba(Appearance.colors.colError.r, Appearance.colors.colError.g, Appearance.colors.colError.b, 0.30)
+                : Qt.rgba(Appearance.colors.colPrimary.r, Appearance.colors.colPrimary.g, Appearance.colors.colPrimary.b, 0.10)
+
+            ColumnLayout {
+                id: histCol
+                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 8; rightMargin: 4; topMargin: 5 }
+                spacing: 2
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    StyledText {
+                        text: modelData.appName
+                        font.pixelSize: Appearance.font.pixelSize.smaller
+                        font.weight: Font.Medium
+                        color: Appearance.colors.colPrimary
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+                    StyledText {
+                        text: root.timeAgo(modelData.time)
+                        font.pixelSize: Appearance.font.pixelSize.smaller
+                        color: Appearance.m3colors.m3outline
+                    }
+                    CircleUtilButton {
+                        implicitWidth: 18; implicitHeight: 18
+                        onClicked: Notifications.discardNotification(modelData.notificationId)
+                        MaterialSymbol {
+                            anchors.centerIn: parent
+                            text: "close"
+                            iconSize: Appearance.font.pixelSize.smallest
+                            color: Appearance.m3colors.m3onSurfaceVariant
+                        }
+                    }
+                }
+                StyledText {
+                    visible: modelData.summary.length > 0
+                    text: modelData.summary
+                    font.pixelSize: Appearance.font.pixelSize.small
+                    font.weight: Font.Medium
+                    color: Appearance.colors.colOnLayer1
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                StyledText {
+                    visible: modelData.body.length > 0
+                    bottomPadding: 5
+                    text: modelData.body.length > 120 ? modelData.body.substring(0, 117) + "…" : modelData.body
+                    font.pixelSize: Appearance.font.pixelSize.smaller
+                    color: Appearance.colors.colSubtext
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+        }
     }
 
     // Placeholder when list is empty
@@ -179,6 +276,12 @@ Item {
             bottom: parent.bottom
         }
 
+        GroupButtonWithIcon {
+            Layout.fillWidth: false
+            buttonIcon: root.showHistory ? "notifications" : "history"
+            toggled: root.showHistory
+            onClicked: root.showHistory = !root.showHistory
+        }
         GroupButtonWithIcon {
             Layout.fillWidth: false
             buttonIcon: "notifications_paused"

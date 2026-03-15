@@ -60,40 +60,35 @@ StyledPopup {
 
                     RowLayout {
                         spacing: 6
-                        StyledText {
-                            text: Translation.tr("At:")
-                            font.pixelSize: Appearance.font.pixelSize.small
-                            color: Appearance.colors.colSubtext
+                        MaterialTextField {
+                            id: timeInput
+                            Layout.fillWidth: true
+                            placeholderText: "HH:MM"
+                            maximumLength: 5
+                            inputMethodHints: Qt.ImhDigitsOnly
+
+                            Keys.onReturnPressed: addAlarmButton.addAlarm()
                         }
-                        StyledSpinBox {
-                            id: hourSpin
-                            from: 0; to: 23
-                            value: new Date().getHours()
-                            implicitWidth: 90
-                            textFromValue: (v) => v.toString().padStart(2, "0")
-                            valueFromText: (t) => Math.min(23, Math.max(0, parseInt(t) || 0))
-                        }
-                        StyledText { text: ":"; font.pixelSize: Appearance.font.pixelSize.normal; color: Appearance.colors.colOnLayer1 }
-                        StyledSpinBox {
-                            id: minuteSpin
-                            from: 0; to: 59; value: 0
-                            implicitWidth: 90
-                            textFromValue: (v) => v.toString().padStart(2, "0")
-                            valueFromText: (t) => Math.min(59, Math.max(0, parseInt(t) || 0))
-                        }
-                        Item { Layout.fillWidth: true }
                         CircleUtilButton {
+                            id: addAlarmButton
                             implicitWidth: 28; implicitHeight: 28
-                            enabled: labelInput.text.trim().length > 0
-                            onClicked: {
-                                if (labelInput.text.trim().length === 0) return
+                            enabled: labelInput.text.trim().length > 0 && /^\d{1,2}:\d{2}$/.test(timeInput.text.trim())
+
+                            function addAlarm() {
+                                if (!enabled) return
+                                const parts = timeInput.text.trim().split(":")
+                                const h = Math.min(23, Math.max(0, parseInt(parts[0]) || 0))
+                                const m = Math.min(59, Math.max(0, parseInt(parts[1]) || 0))
                                 const now = new Date()
                                 const target = new Date()
-                                target.setHours(hourSpin.value, minuteSpin.value, 0, 0)
+                                target.setHours(h, m, 0, 0)
                                 if (target <= now) target.setDate(target.getDate() + 1)
                                 AlarmService.addAlarm(labelInput.text.trim(), target.getTime())
                                 labelInput.text = ""
+                                timeInput.text = ""
                             }
+
+                            onClicked: addAlarmButton.addAlarm()
                             MaterialSymbol {
                                 anchors.centerIn: parent
                                 text: "add_alarm"
