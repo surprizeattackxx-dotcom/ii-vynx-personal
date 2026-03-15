@@ -68,6 +68,8 @@ Singleton {
     property string screenshareStateScript: FileUtils.trimFileProtocol(`${Directories.scriptPath}/screenShare/screensharestate.sh`)
     property string screenshareStatePath: FileUtils.trimFileProtocol(`${Directories.state}/user/generated/screenshare/apps.txt`)
     property string geniusLyricsScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lyrics/genius-lyrics.js`)
+    property string setHyprlockBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-hyprlock-bg.sh`)
+    property string setSddmBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-sddm-bg.sh`)
     // Cleanup on init
     Component.onCompleted: {
         Quickshell.execDetached(["mkdir", "-p", `${shellConfig}`])
