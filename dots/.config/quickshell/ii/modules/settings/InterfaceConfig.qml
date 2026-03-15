@@ -1,9 +1,11 @@
 import QtQuick
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 import qs
 import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
+import qs.modules.common.functions
 import Quickshell
 import Quickshell.Io
 
@@ -272,15 +274,14 @@ ContentPage {
         ContentSubsection {
             title: Translation.tr("Backgrounds")
 
-            // ── Processes ────────────────────────────────────────────────
-            // kdialog picker → output is the chosen file path
+            // ── Hidden processes ─────────────────────────────────────────
             Process {
                 id: hyprlockPickerProc
                 stdout: SplitParser {
                     splitMarker: "\n"
                     onRead: data => {
-                        const path = data.trim()
-                        if (path.length > 0) setHyprlockProc.setPath(path)
+                        const p = data.trim()
+                        if (p.length > 0) setHyprlockProc.setPath(p)
                     }
                 }
             }
@@ -289,10 +290,11 @@ ContentPage {
                 stdout: SplitParser {
                     splitMarker: "\n"
                     onRead: data => {
-                        const path = data.trim()
-                        if (path.length > 0) {
-                            setSddmProc.command = ["pkexec", "bash", Directories.setSddmBgScriptPath, path]
+                        const p = data.trim()
+                        if (p.length > 0) {
+                            setSddmProc.command = ["pkexec", "bash", Directories.setSddmBgScriptPath, p]
                             setSddmProc.running = true
+                            sddmCurrentPath = p
                         }
                     }
                 }
@@ -302,13 +304,14 @@ ContentPage {
                 function setPath(imgPath) {
                     command = ["bash", Directories.setHyprlockBgScriptPath, imgPath]
                     running = true
+                    hyprlockCurrentPath = imgPath
                 }
                 function clearPath() {
                     command = ["bash", "-c",
                         `sed -i 's|^\\(\\s*\\)path\\s*=.*|\\1color = rgba(181818FF)|' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf"`]
                     running = true
+                    hyprlockCurrentPath = ""
                 }
-                onExited: hyprlockReadProc.running = true
             }
             Process { id: setSddmProc }
 
@@ -324,89 +327,161 @@ ContentPage {
                 Component.onCompleted: running = true
             }
 
-            property string hyprlockCurrentPath: ""
-
-            // ── Hyprlock background ──────────────────────────────────────
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                MaterialSymbol {
-                    text: "lock"
-                    iconSize: Appearance.font.pixelSize.normal
-                    color: Appearance.m3colors.m3outline
-                }
-                StyledText {
-                    Layout.fillWidth: true
-                    text: Translation.tr("Lock screen (Hyprlock)")
-                    font.pixelSize: Appearance.font.pixelSize.small
-                    color: Appearance.colors.colOnLayer1
-                }
-            }
-            StyledText {
-                Layout.fillWidth: true
-                text: parent.hyprlockCurrentPath.length > 0
-                    ? parent.hyprlockCurrentPath
-                    : Translation.tr("(solid color — no image set)")
-                font.pixelSize: Appearance.font.pixelSize.smaller
-                color: Appearance.m3colors.m3outline
-                elide: Text.ElideLeft
-            }
-            ConfigRow {
-                uniform: false
-                RippleButton {
-                    buttonText: Translation.tr("Browse…")
-                    buttonRadius: Appearance.rounding.small
-                    Layout.fillWidth: true
-                    onClicked: {
-                        hyprlockPickerProc.command = ["kdialog", "--getopenfilename",
-                            FileUtils.trimFileProtocol(Directories.pictures),
-                            "*.jpg *.jpeg *.png *.webp *.gif *.bmp|Images",
-                            "--title", Translation.tr("Choose lock screen background")]
-                        hyprlockPickerProc.running = true
+            // Read current SDDM background on load
+            Process {
+                id: sddmReadProc
+                command: ["bash", "-c",
+                    `grep -oP '(?<=^BackgroundPlaceholder=").*(?=")' /usr/share/sddm/themes/sddm-astronaut-theme/Themes/hyprland_kath.conf 2>/dev/null | head -1`]
+                stdout: SplitParser {
+                    splitMarker: "\n"
+                    onRead: data => {
+                        const rel = data.trim()
+                        if (rel.length > 0)
+                            sddmCurrentPath = "/usr/share/sddm/themes/sddm-astronaut-theme/" + rel
                     }
                 }
+                Component.onCompleted: running = true
+            }
+
+            property string hyprlockCurrentPath: ""
+            property string sddmCurrentPath: ""
+
+            // ── Hyprlock preview ─────────────────────────────────────────
+            StyledText {
+                text: Translation.tr("Lock screen")
+                font.pixelSize: Appearance.font.pixelSize.small
+                font.weight: Font.Medium
+                color: Appearance.colors.colOnLayer1
+            }
+
+            component BgPreview: Item {
+                id: bgPreview
+                required property string imagePath
+                required property string label
+                signal picked
+                signal cleared
+
+                implicitWidth: 320
+                implicitHeight: 180
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Appearance.rounding.normal
+                    color: Appearance.m3colors.m3surfaceContainerHigh
+                }
+
+                StyledImage {
+                    anchors.fill: parent
+                    visible: bgPreview.imagePath.length > 0
+                    source: bgPreview.imagePath
+                    fillMode: Image.PreserveAspectCrop
+                    sourceSize.width: bgPreview.implicitWidth
+                    sourceSize.height: bgPreview.implicitHeight
+                    cache: false
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: bgPreview.implicitWidth
+                            height: bgPreview.implicitHeight
+                            radius: Appearance.rounding.normal
+                        }
+                    }
+                }
+
+                // Placeholder icon when no image
+                MaterialSymbol {
+                    anchors.centerIn: parent
+                    visible: bgPreview.imagePath.length === 0
+                    text: "add_photo_alternate"
+                    iconSize: 40
+                    color: Appearance.m3colors.m3outline
+                }
+
+                // Click to pick
                 RippleButton {
-                    buttonText: Translation.tr("Clear")
-                    buttonRadius: Appearance.rounding.small
-                    Layout.fillWidth: false
-                    enabled: parent.parent.hyprlockCurrentPath.length > 0
-                    onClicked: setHyprlockProc.clearPath()
+                    anchors.fill: parent
+                    colBackground: "transparent"
+                    colBackgroundHover: ColorUtils.transparentize(Appearance.colors.colOnPrimary, 0.85)
+                    colRipple: ColorUtils.transparentize(Appearance.colors.colOnPrimary, 0.5)
+                    buttonRadius: Appearance.rounding.normal
+                    onClicked: bgPreview.picked()
+                }
+
+                // Filename label
+                Rectangle {
+                    visible: bgPreview.imagePath.length > 0
+                    anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
+                    implicitWidth: Math.min(fnLabel.implicitWidth + 16, bgPreview.width - 16)
+                    implicitHeight: fnLabel.implicitHeight + 6
+                    color: Appearance.colors.colPrimary
+                    radius: Appearance.rounding.full
+                    StyledText {
+                        id: fnLabel
+                        anchors.centerIn: parent
+                        property string fn: bgPreview.imagePath.split("/").pop()
+                        text: fn.length > 30 ? "…" + fn.slice(-27) : fn
+                        color: Appearance.colors.colOnPrimary
+                        font.pixelSize: Appearance.font.pixelSize.smaller
+                    }
+                }
+
+                // Clear button
+                RippleButton {
+                    visible: bgPreview.imagePath.length > 0
+                    anchors { right: parent.right; top: parent.top; margins: 6 }
+                    implicitWidth: 24; implicitHeight: 24
+                    buttonRadius: 12
+                    colBackground: ColorUtils.transparentize(Appearance.colors.colError, 0.3)
+                    onClicked: bgPreview.cleared()
+                    MaterialSymbol {
+                        anchors.centerIn: parent
+                        text: "close"
+                        iconSize: Appearance.font.pixelSize.small
+                        color: Appearance.colors.colOnPrimary
+                    }
                 }
             }
 
-            // ── SDDM background ──────────────────────────────────────────
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                MaterialSymbol {
-                    text: "login"
-                    iconSize: Appearance.font.pixelSize.normal
-                    color: Appearance.m3colors.m3outline
+            BgPreview {
+                imagePath: hyprlockCurrentPath
+                label: Translation.tr("Lock screen")
+                onPicked: {
+                    hyprlockPickerProc.command = ["kdialog", "--getopenfilename",
+                        FileUtils.trimFileProtocol(Directories.pictures),
+                        "*.jpg *.jpeg *.png *.webp *.gif *.bmp|Images",
+                        "--title", Translation.tr("Choose lock screen background")]
+                    hyprlockPickerProc.running = true
                 }
-                StyledText {
-                    Layout.fillWidth: true
-                    text: Translation.tr("Login screen (SDDM)")
-                    font.pixelSize: Appearance.font.pixelSize.small
-                    color: Appearance.colors.colOnLayer1
-                }
+                onCleared: setHyprlockProc.clearPath()
             }
-            RippleButton {
-                buttonText: Translation.tr("Browse…")
-                buttonRadius: Appearance.rounding.small
-                Layout.fillWidth: true
-                onClicked: {
+
+            // ── SDDM preview ─────────────────────────────────────────────
+            StyledText {
+                text: Translation.tr("Login screen (SDDM)")
+                font.pixelSize: Appearance.font.pixelSize.small
+                font.weight: Font.Medium
+                color: Appearance.colors.colOnLayer1
+            }
+
+            BgPreview {
+                imagePath: sddmCurrentPath
+                label: Translation.tr("Login screen")
+                onPicked: {
                     sddmPickerProc.command = ["kdialog", "--getopenfilename",
                         FileUtils.trimFileProtocol(Directories.pictures),
                         "*.jpg *.jpeg *.png *.webp *.gif *.bmp|Images",
-                        "--title", Translation.tr("Choose SDDM login background")]
+                        "--title", Translation.tr("Choose login screen background")]
                     sddmPickerProc.running = true
                 }
+                onCleared: {} // SDDM clear not supported (would need root + default file)
             }
+
             StyledText {
-                Layout.fillWidth: true
-                text: Translation.tr("(requires admin password via pkexec)")
+                text: Translation.tr("Changing login screen requires admin password (pkexec)")
                 font.pixelSize: Appearance.font.pixelSize.smaller
                 color: Appearance.m3colors.m3outline
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
     }
