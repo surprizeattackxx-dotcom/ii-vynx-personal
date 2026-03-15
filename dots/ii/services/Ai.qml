@@ -396,6 +396,41 @@ Singleton {
                     "description": "Check if the clipboard contains an image and attach it to the conversation for analysis. Use when the user says they copied a screenshot or image to their clipboard.",
                     "parameters": {}
                 },
+                {
+                    "name": "show_plan",
+                    "description": "Before executing any multi-step task (2+ actions, app launching, system changes), present a numbered plan to the user and wait for their approval. After approval, execute each step in order using the appropriate tools. Always use this for complex or chained tasks.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": { "type": "string", "description": "Short title for the task, e.g. 'Open Spotify and play music'" },
+                            "steps": {
+                                "type": "array",
+                                "description": "Ordered list of steps",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "description": { "type": "string", "description": "Human-readable description of this step" },
+                                        "tool": { "type": "string", "description": "Tool used for this step, e.g. 'launch_app', 'wait_for_app', 'control_media'" }
+                                    },
+                                    "required": ["description"]
+                                }
+                            }
+                        },
+                        "required": ["title", "steps"]
+                    }
+                },
+                {
+                    "name": "wait_for_app",
+                    "description": "Wait until an application process is running and ready. Always call this after launch_app before interacting with the app. Polls until the process appears or times out.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string", "description": "Process name to wait for, e.g. 'spotify', 'firefox', 'code'" },
+                            "timeout": { "type": "integer", "description": "Max seconds to wait (default 15, max 30)" }
+                        },
+                        "required": ["app"]
+                    }
+                },
             ]}],
             "search": [{
                 "google_search": {}
@@ -734,6 +769,36 @@ Singleton {
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "show_plan",
+                        "description": "Present a numbered multi-step task plan to the user for approval before executing. Use for any task with 2+ steps.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "steps": { "type": "array", "items": { "type": "object", "properties": { "description": { "type": "string" }, "tool": { "type": "string" } }, "required": ["description"] } }
+                            },
+                            "required": ["title", "steps"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "wait_for_app",
+                        "description": "Wait until an application process is running. Call after launch_app. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "Process name, e.g. 'spotify'" },
+                                "timeout": { "type": "integer", "description": "Max seconds (default 15)" }
+                            },
+                            "required": ["app"]
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -1051,6 +1116,36 @@ Singleton {
                         "name": "read_clipboard_image",
                         "description": "Attach clipboard image to conversation for analysis. Runs automatically.",
                         "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "show_plan",
+                        "description": "Present a numbered multi-step task plan to the user for approval before executing. Use for any task with 2+ steps.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "steps": { "type": "array", "items": { "type": "object", "properties": { "description": { "type": "string" }, "tool": { "type": "string" } }, "required": ["description"] } }
+                            },
+                            "required": ["title", "steps"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "wait_for_app",
+                        "description": "Wait until an application process is running. Call after launch_app. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "Process name, e.g. 'spotify'" },
+                                "timeout": { "type": "integer", "description": "Max seconds (default 15)" }
+                            },
+                            "required": ["app"]
+                        }
                     }
                 },
             ],
@@ -1981,6 +2076,27 @@ Singleton {
             clipboardImageProc.targetPath = clipPath;
             clipboardImageProc.command = ["bash", "-c", `wl-paste --type image/png > "${clipPath}" 2>&1 && echo "saved" || echo "no_image"`];
             clipboardImageProc.running = true;
+        } else if (name === "show_plan") {
+            const title = args.title || "Task Plan";
+            const steps = args.steps || [];
+            const stepsText = steps.map((s, i) => `${i + 1}. **${s.description}**${s.tool ? ` *(${s.tool})*` : ""}`).join("\n");
+            const contentToAppend = `\n\n### 📋 ${title}\n\n${stepsText}\n\n*Approve to execute all steps?*`;
+            message.rawContent += contentToAppend;
+            message.content += contentToAppend;
+            // On approval the existing approveCommand flow runs this, signalling the AI to proceed
+            message.functionCall.args.command = `echo "Plan approved — executing ${steps.length} step(s)"`;
+            message.functionPending = true;
+        } else if (name === "wait_for_app") {
+            const app = (args.app || "").replace(/"/g, '\\"');
+            const timeout = Math.min(parseInt(args.timeout) || 15, 30);
+            const waitMsg = createFunctionOutputMessage(name, "", false);
+            const waitId = idForMessage(waitMsg);
+            root.messageIDs = [...root.messageIDs, waitId];
+            root.messageByID[waitId] = waitMsg;
+            commandExecutionProc.message = waitMsg;
+            commandExecutionProc.baseMessageContent = waitMsg.content;
+            commandExecutionProc.shellCommand = `timeout ${timeout} bash -c 'until pgrep -xi "${app}" > /dev/null 2>&1; do sleep 0.5; done && echo "${app} is ready"' 2>/dev/null || echo "${app} did not start within ${timeout}s"`;
+            commandExecutionProc.running = true;
         } else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
     }
 

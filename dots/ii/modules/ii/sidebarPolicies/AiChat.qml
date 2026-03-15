@@ -152,6 +152,18 @@ Item {
             }
         },
         {
+            name: "task",
+            description: Translation.tr("Run a multi-step agentic task. The AI will plan the steps and ask for your approval before executing."),
+            execute: args => {
+                const taskDesc = args.join(" ").trim();
+                if (!taskDesc) {
+                    Ai.addMessage(Translation.tr("Usage: %1task <describe what you want done>\n\nExample: %1task open spotify and play my recommended music").arg(root.commandPrefix), Ai.interfaceRole);
+                    return;
+                }
+                Ai.sendUserMessage(`You are acting as an autonomous agent. Use show_plan to present a step-by-step plan before executing anything. Task: ${taskDesc}`);
+            }
+        },
+        {
             name: "capabilities",
             description: Translation.tr("Show all AI tools and what you can ask for"),
             execute: () => {
@@ -200,6 +212,12 @@ Item {
 - Web search — *"search for latest Hyprland news"*
 - Calculate — *"what is sin(45°)?"*
 - Pick a color — *"open color picker"*
+
+### 🤖 Agentic Tasks
+- Multi-step tasks with plan approval — *"open spotify and play my recommended music"*
+- Or use \`/task\` for explicit agent mode — */task set up a pomodoro timer session*
+- Wait for apps to start before interacting with them
+- Chain any combination of tools automatically
 
 ### 💬 Context always available
 - Active window, open windows, clipboard, current media, date/time, distro
