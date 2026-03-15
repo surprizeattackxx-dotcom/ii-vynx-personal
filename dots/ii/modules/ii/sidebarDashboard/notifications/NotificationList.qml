@@ -94,8 +94,9 @@ Item {
                         font.pixelSize: Appearance.font.pixelSize.smaller
                         color: Appearance.m3colors.m3outline
                     }
-                    CircleUtilButton {
+                    RippleButton {
                         implicitWidth: 18; implicitHeight: 18
+                        buttonRadius: implicitWidth / 2
                         onClicked: Notifications.discardNotification(modelData.notificationId)
                         MaterialSymbol {
                             anchors.centerIn: parent
