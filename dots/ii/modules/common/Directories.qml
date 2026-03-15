@@ -70,6 +70,7 @@ Singleton {
     property string geniusLyricsScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lyrics/genius-lyrics.js`)
     property string setHyprlockBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-hyprlock-bg.sh`)
     property string setSddmBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/set-sddm-bg.sh`)
+    property string readSddmBgScriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/lock/read-sddm-bg.sh`)
     // Cleanup on init
     Component.onCompleted: {
         Quickshell.execDetached(["mkdir", "-p", `${shellConfig}`])
