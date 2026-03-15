@@ -163,7 +163,9 @@ fi
 CONFIG_DIR="$HOME/.config"
 CHECK_DIR="$CONFIG_DIR/illogical-impulse"
 TARGET_DIR="$CONFIG_DIR/quickshell/ii"
-SOURCE_DIR="$SCRIPT_DIR/dots/.config/quickshell/ii"
+SCRIPTS_TARGET_DIR="$CONFIG_DIR/quickshell/scripts"
+SOURCE_DIR="$SCRIPT_DIR/dots/ii"
+SCRIPTS_SOURCE_DIR="$SCRIPT_DIR/dots/scripts"
 
 log_verbose "CONFIG_DIR=$CONFIG_DIR"
 log_verbose "CHECK_DIR=$CHECK_DIR"
@@ -221,15 +223,15 @@ mkdir -p "$(dirname "$TARGET_DIR")"
 
 if [ "$BACKUP" = true ]; then
     log_verbose "Checking for existing directory"
-    if [ -d "$TARGET_DIR" ]; then
+    if [ -e "$TARGET_DIR" ] && [ ! -L "$TARGET_DIR" ]; then
         BACKUP_DIR="${TARGET_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
         log_verbose "Existing directory found, creating backup: $BACKUP_DIR"
         echo -e "${YELLOW}Backing up the current Quickshell configuration: $BACKUP_DIR${NC}"
         mv "$TARGET_DIR" "$BACKUP_DIR"
     else
-        log_verbose "No existing directory found, skipping backup"
+        log_verbose "No existing directory found (or already a symlink), skipping backup"
     fi
-else 
+else
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${RED}      ⚠ No backup flag used${NC}"
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -237,14 +239,19 @@ else
 fi
 
 echo ""
-echo -e "${NC}• Copying...${NC}"
-log_verbose "Copying from $SOURCE_DIR to $TARGET_DIR"
-cp -r "$SOURCE_DIR/." "$TARGET_DIR/"
+echo -e "${NC}• Linking...${NC}"
+log_verbose "Symlinking $SOURCE_DIR → $TARGET_DIR"
+rm -f "$TARGET_DIR"
+ln -s "$SOURCE_DIR" "$TARGET_DIR"
+
+rm -f "$SCRIPTS_TARGET_DIR"
+ln -s "$SCRIPTS_SOURCE_DIR" "$SCRIPTS_TARGET_DIR"
 
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Successfully copied: $TARGET_DIR${NC}"
+    echo -e "${GREEN}✓ Symlinked: $TARGET_DIR → $SOURCE_DIR${NC}"
+    echo -e "${GREEN}✓ Symlinked: $SCRIPTS_TARGET_DIR → $SCRIPTS_SOURCE_DIR${NC}"
 else
-    echo -e "${RED}✗ An error occurred while copying!${NC}"
+    echo -e "${RED}✗ An error occurred while creating symlinks!${NC}"
     exit 1
 fi
 
