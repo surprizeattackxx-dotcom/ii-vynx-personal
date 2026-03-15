@@ -319,6 +319,7 @@ Singleton {
                     property bool showDarkModeToggle: true
                     property bool showPerformanceProfileToggle: false
                     property bool showScreenRecord: false
+                    property bool showClipboard: true
                 }
                 property JsonObject workspaces: JsonObject {
                     property bool monochromeIcons: true
@@ -332,6 +333,7 @@ Singleton {
                     property int maxWindowCount: 5 // Maximum windows to show in one workspace
                     property bool useNerdFont: false
                     property int activeIndicatorOpacity: 100 // 0-100
+                    property bool showPreviewOnHover: true
                 }
                 property JsonObject weather: JsonObject {
                     property bool enable: false
