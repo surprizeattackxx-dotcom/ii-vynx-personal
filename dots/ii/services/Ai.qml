@@ -75,13 +75,18 @@ Singleton {
     property list<var> promptFiles: [...defaultPrompts, ...userPrompts]
     property list<var> savedChats: []
 
+    property string openWindowsList: ""
+    property string currentMediaTitle: ""
+
     property var promptSubstitutions: {
         "{DISTRO}": SystemInfo.distroName,
         "{DATETIME}": `${DateTime.time}, ${DateTime.collapsedCalendarFormat}`,
         "{WINDOWCLASS}": ToplevelManager.activeToplevel?.appId ?? "Unknown",
         "{WINDOWTITLE}": ToplevelManager.activeToplevel?.title ?? "Unknown",
         "{CLIPBOARD}": (Quickshell.clipboardText ?? "").substring(0, 300),
-        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})`
+        "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})`,
+        "{OPENWINDOWS}": root.openWindowsList,
+        "{CURRENTMEDIA}": root.currentMediaTitle,
     }
 
     property string aiMemoryContent: ""
@@ -364,6 +369,32 @@ Singleton {
                         },
                         "required": ["action"]
                     }
+                },
+                {
+                    "name": "capture_region",
+                    "description": "Open an interactive region selector so the user can draw a box around part of their screen. Captures that region as an image and attaches it for visual analysis. Use when the user wants to analyze, read, or describe a specific part of their screen.",
+                    "parameters": {}
+                },
+                {
+                    "name": "ocr_region",
+                    "description": "Open an interactive region selector, capture that area of the screen, and extract text from it using OCR. Returns the text found. Use when the user wants to copy or read text from an image or part of the screen.",
+                    "parameters": {}
+                },
+                {
+                    "name": "speak",
+                    "description": "Read text aloud using text-to-speech. Use when the user asks you to read something out loud or narrate a response.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "The text to speak aloud" }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "read_clipboard_image",
+                    "description": "Check if the clipboard contains an image and attach it to the conversation for analysis. Use when the user says they copied a screenshot or image to their clipboard.",
+                    "parameters": {}
                 },
             ]}],
             "search": [{
@@ -665,6 +696,44 @@ Singleton {
                         }
                     }
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "capture_region",
+                        "description": "Open an interactive region selector to capture a specific screen area for visual analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "ocr_region",
+                        "description": "Open an interactive region selector, capture that screen area, and extract text via OCR. Returns the text. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "speak",
+                        "description": "Read text aloud using text-to-speech. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to speak aloud" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_clipboard_image",
+                        "description": "Attach clipboard image to conversation for analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -944,6 +1013,44 @@ Singleton {
                             },
                             "required": ["action"]
                         }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "capture_region",
+                        "description": "Open an interactive region selector to capture a specific screen area for visual analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "ocr_region",
+                        "description": "Open an interactive region selector, capture that screen area, and extract text via OCR. Returns the text. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "speak",
+                        "description": "Read text aloud using text-to-speech. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to speak aloud" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_clipboard_image",
+                        "description": "Attach clipboard image to conversation for analysis. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
                     }
                 },
             ],
@@ -1842,6 +1949,38 @@ Singleton {
                 addFunctionOutputMessage(name, `Unknown action: ${action}. Use 'list', 'add', or 'clear'.`);
                 requester.makeRequest();
             }
+        } else if (name === "capture_region") {
+            const capPath = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/region_capture.png`);
+            regionCaptureProc.targetPath = capPath;
+            regionCaptureProc.command = ["bash", "-c",
+                `region=$(slurp 2>/dev/null) && [ -n "$region" ] && grim -g "$region" "${capPath}" && echo "ok" || echo "cancelled"`
+            ];
+            regionCaptureProc.running = true;
+        } else if (name === "ocr_region") {
+            const ocrImg = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/ocr_capture.png`);
+            const ocrOut = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/ocr_out`);
+            const ocrMsg = createFunctionOutputMessage(name, "", false);
+            const ocrId = idForMessage(ocrMsg);
+            root.messageIDs = [...root.messageIDs, ocrId];
+            root.messageByID[ocrId] = ocrMsg;
+            commandExecutionProc.message = ocrMsg;
+            commandExecutionProc.baseMessageContent = ocrMsg.content;
+            commandExecutionProc.shellCommand = `region=$(slurp 2>/dev/null) && [ -n "$region" ] && grim -g "$region" "${ocrImg}" && tesseract "${ocrImg}" "${ocrOut}" 2>/dev/null && cat "${ocrOut}.txt" || echo 'Cancelled or missing tools (need: slurp, grim, tesseract)'`;
+            commandExecutionProc.running = true;
+        } else if (name === "speak") {
+            const raw = args.text || "";
+            if (!raw) { addFunctionOutputMessage(name, "Invalid: text is required"); requester.makeRequest(); return; }
+            const escaped = raw.replace(/'/g, "'\\''");
+            Quickshell.execDetached(["bash", "-c",
+                `espeak-ng '${escaped}' 2>/dev/null || espeak '${escaped}' 2>/dev/null`
+            ]);
+            addFunctionOutputMessage(name, `Speaking: "${raw.substring(0, 60)}${raw.length > 60 ? "..." : ""}"`);
+            requester.makeRequest();
+        } else if (name === "read_clipboard_image") {
+            const clipPath = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/clipboard_image.png`);
+            clipboardImageProc.targetPath = clipPath;
+            clipboardImageProc.command = ["bash", "-c", `wl-paste --type image/png > "${clipPath}" 2>&1 && echo "saved" || echo "no_image"`];
+            clipboardImageProc.running = true;
         } else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
     }
 
@@ -1909,6 +2048,71 @@ Singleton {
     FileView {
         id: chatExportFile
         blockLoading: true
+    }
+
+    Process {
+        id: regionCaptureProc
+        property string targetPath: ""
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const out = this.text.trim();
+                if (!out || out === "cancelled") {
+                    addFunctionOutputMessage("capture_region", "Region selection cancelled.");
+                    requester.makeRequest();
+                    return;
+                }
+                root.pendingFilePath = regionCaptureProc.targetPath;
+                addFunctionOutputMessage("capture_region", "Region captured. Now analyzing...");
+                requester.makeRequest();
+            }
+        }
+    }
+
+    Process {
+        id: clipboardImageProc
+        property string targetPath: ""
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const out = this.text.trim();
+                if (!out || out === "no_image") {
+                    addFunctionOutputMessage("read_clipboard_image", "No image found in clipboard.");
+                    requester.makeRequest();
+                    return;
+                }
+                root.pendingFilePath = clipboardImageProc.targetPath;
+                addFunctionOutputMessage("read_clipboard_image", "Clipboard image attached. Now analyzing...");
+                requester.makeRequest();
+            }
+        }
+    }
+
+    Process {
+        id: windowListProc
+        running: true
+        command: ["bash", "-c", "hyprctl clients -j 2>/dev/null | jq -r '.[].title + \" (\" + .class + \")\"' 2>/dev/null | head -15 | tr '\\n' ',' | sed 's/,$//'" ]
+        stdout: StdioCollector {
+            onStreamFinished: root.openWindowsList = this.text.trim()
+        }
+    }
+
+    Process {
+        id: mediaContextProc
+        running: true
+        command: ["bash", "-c", "playerctl metadata --format '{{artist}} - {{title}}' 2>/dev/null || echo ''"]
+        stdout: StdioCollector {
+            onStreamFinished: root.currentMediaTitle = this.text.trim()
+        }
+    }
+
+    Timer {
+        id: contextRefreshTimer
+        running: true
+        repeat: true
+        interval: 10000
+        onTriggered: {
+            windowListProc.running = true;
+            mediaContextProc.running = true;
+        }
     }
 
     /**
