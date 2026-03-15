@@ -17,9 +17,11 @@ Singleton {
 
     // Guard to prevent getData() firing before Config is ready
     property bool ready: false
+    property string weatherApiKey: ""
 
     onUseUSCSChanged: { if (root.ready) root.getData(); }
     onCityChanged:    { if (root.ready) root.getData(); }
+    onWeatherApiKeyChanged: { if (root.ready && root.weatherApiKey) root.getData(); }
 
     property bool isLoading: false
     property bool hasError: false
@@ -229,7 +231,8 @@ Singleton {
     // ── Fetch ─────────────────────────────────────────────────────────────────
 
     function getData() {
-        const apiKey  = "53018ab3affa799e083fc88d871ea453";
+        const apiKey  = root.weatherApiKey;
+        if (!apiKey) return;
         const base    = "https://api.openweathermap.org/data/2.5";
         const units   = "metric";
 
@@ -286,6 +289,18 @@ Singleton {
     }
 
     // ── QML objects ───────────────────────────────────────────────────────────
+
+    Process {
+        id: apiKeyReader
+        running: true
+        command: ["bash", "-c", "cat ~/.config/illogical-impulse/weather_api_key 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const key = this.text.trim();
+                if (key) root.weatherApiKey = key;
+            }
+        }
+    }
 
     Component.onCompleted: {
         root.ready = true;
