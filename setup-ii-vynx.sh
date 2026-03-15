@@ -248,6 +248,32 @@ else
     exit 1
 fi
 
+WEATHER_KEY_FILE="$HOME/.config/illogical-impulse/weather_api_key"
+if [ ! -f "$WEATHER_KEY_FILE" ]; then
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}       Weather API Key Setup      ${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${NC}The weather widget requires an OpenWeatherMap API key.${NC}"
+    echo -e "${BLUE}Get a free key at: https://openweathermap.org/api${NC}"
+    echo ""
+    if [ "$NO_CONFIRM" = false ]; then
+        echo -e "${YELLOW}Enter your OpenWeatherMap API key (leave blank to skip): ${NC}"
+        read -r weather_api_key
+        if [ -n "$weather_api_key" ]; then
+            mkdir -p "$(dirname "$WEATHER_KEY_FILE")"
+            echo -n "$weather_api_key" > "$WEATHER_KEY_FILE"
+            echo -e "${GREEN}✓ Weather API key saved to $WEATHER_KEY_FILE${NC}"
+        else
+            echo -e "${YELLOW}⚠ Skipped. Weather widget will not function until you add the key:${NC}"
+            echo -e "${YELLOW}  echo -n 'YOUR_KEY' > $WEATHER_KEY_FILE${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ No-confirm mode: skipping weather API key prompt.${NC}"
+        echo -e "${YELLOW}  Add it manually: echo -n 'YOUR_KEY' > $WEATHER_KEY_FILE${NC}"
+    fi
+fi
+
 echo ""
 echo -e "${NC}• Restarting Hyprland & Quickshell...${NC}"
 sleep 0.5
