@@ -268,6 +268,137 @@ ContentPage {
                 }
             }
         }
+
+        ContentSubsection {
+            title: Translation.tr("Backgrounds")
+
+            // ── Hyprlock background ──────────────────────────────────────
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                MaterialSymbol {
+                    text: "lock"
+                    iconSize: Appearance.font.pixelSize.normal
+                    color: Appearance.m3colors.m3outline
+                }
+                StyledText {
+                    Layout.fillWidth: true
+                    text: Translation.tr("Lock screen (Hyprlock)")
+                    font.pixelSize: Appearance.font.pixelSize.small
+                    color: Appearance.colors.colOnLayer1
+                }
+            }
+
+            // Preview of current hyprlock bg path
+            StyledText {
+                id: hyprlockBgLabel
+                Layout.fillWidth: true
+                text: hyprlockBgPath.length > 0
+                    ? hyprlockBgPath
+                    : Translation.tr("(solid color — no image set)")
+                font.pixelSize: Appearance.font.pixelSize.smaller
+                color: Appearance.m3colors.m3outline
+                elide: Text.ElideLeft
+                wrapMode: Text.NoWrap
+
+                property string hyprlockBgPath: {
+                    // Parse path= from hyprlock.conf via a property binding updated by setHyprlockProc
+                    return hyprlockPathReader.content
+                }
+            }
+
+            // FileView to read current hyprlock bg path
+            QtObject {
+                id: hyprlockPathReader
+                property string content: ""
+                Component.onCompleted: readPath()
+                function readPath() {
+                    readProc.running = true
+                }
+            }
+            Process {
+                id: readProc
+                command: ["bash", "-c",
+                    `grep -oP '(?<=^\\s{0,8}path\\s=\\s).*' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf" 2>/dev/null | head -1`]
+                stdout: SplitParser {
+                    splitMarker: "\n"
+                    onRead: data => { hyprlockPathReader.content = data.trim() }
+                }
+            }
+
+            ConfigRow {
+                uniform: false
+                RippleButton {
+                    buttonText: Translation.tr("Use current wallpaper")
+                    buttonRadius: Appearance.rounding.small
+                    Layout.fillWidth: true
+                    enabled: Config.options.background.wallpaperPath.length > 0
+                    onClicked: setHyprlockProc.setPath(Config.options.background.wallpaperPath)
+                }
+                RippleButton {
+                    buttonText: Translation.tr("Clear (use color)")
+                    buttonRadius: Appearance.rounding.small
+                    Layout.fillWidth: false
+                    onClicked: setHyprlockProc.clearPath()
+                }
+            }
+
+            Process {
+                id: setHyprlockProc
+                function setPath(imgPath) {
+                    command = ["bash", Directories.setHyprlockBgScriptPath, imgPath]
+                    running = true
+                }
+                function clearPath() {
+                    command = ["bash", "-c",
+                        `sed -i 's|^\\(\\s*\\)path\\s*=.*|\\1color = rgba(181818FF)|' "${FileUtils.trimFileProtocol(Directories.config)}/hypr/hyprlock.conf"`]
+                    running = true
+                }
+                onExited: readProc.running = true
+            }
+
+            // ── SDDM background ──────────────────────────────────────────
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                MaterialSymbol {
+                    text: "login"
+                    iconSize: Appearance.font.pixelSize.normal
+                    color: Appearance.m3colors.m3outline
+                }
+                StyledText {
+                    Layout.fillWidth: true
+                    text: Translation.tr("Login screen (SDDM)")
+                    font.pixelSize: Appearance.font.pixelSize.small
+                    color: Appearance.colors.colOnLayer1
+                }
+            }
+
+            RippleButton {
+                buttonText: Translation.tr("Use current wallpaper")
+                buttonRadius: Appearance.rounding.small
+                Layout.fillWidth: true
+                enabled: Config.options.background.wallpaperPath.length > 0
+                onClicked: {
+                    setSddmProc.command = [
+                        "pkexec", "bash", Directories.setSddmBgScriptPath,
+                        Config.options.background.wallpaperPath
+                    ]
+                    setSddmProc.running = true
+                }
+            }
+
+            Process { id: setSddmProc }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: Translation.tr("(requires admin password via pkexec)")
+                font.pixelSize: Appearance.font.pixelSize.smaller
+                color: Appearance.m3colors.m3outline
+            }
+        }
     }
 
     ContentSection {
