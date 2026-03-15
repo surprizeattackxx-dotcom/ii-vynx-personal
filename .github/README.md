@@ -31,8 +31,6 @@ However there can (and will) be bugs **so don't expect stability here**. Use the
 
 Before saying “these dots are bloated,” keep in mind that there’s a toggle for everything.
 
-You can join this [**ii-lacuna channel**](https://discord.com/channels/1393080422245863506/1457739857240653961) in end-4's official discord server to ask/chat about this repository.
-
 <div align="center">
     <h2>• installation •</h2>
 </div>
