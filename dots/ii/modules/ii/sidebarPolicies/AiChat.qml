@@ -188,9 +188,13 @@ Item {
 - Extract text from screen — *"read the text in that window"* (uses \`ocr_region\`)
 - Read clipboard image — *"analyze the image I copied"* (uses \`read_clipboard_image\`)
 
-### 🎵 Media
+### 🎵 Media & Search
 - Play / pause / skip — *"pause music"*, *"skip to next"*
 - Get currently playing — *"what's playing?"*
+- Search Spotify — *"search spotify for lofi hip hop"*
+- Search YouTube, YouTube Music, SoundCloud, Twitch, Bandcamp — *"search youtube for..."*
+- Search Reddit, GitHub — *"search reddit for..."*
+- Search local files — *"find files named report"*
 
 ### 🔊 TTS
 - Read text aloud — *"read that back to me"* (uses \`speak\`)

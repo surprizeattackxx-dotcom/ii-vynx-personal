@@ -431,6 +431,18 @@ Singleton {
                         "required": ["app"]
                     }
                 },
+                {
+                    "name": "search_app",
+                    "description": "Search within a specific app or service and open the results. Supports: spotify (opens in-app search), youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files (local filesystem). Use this when the user wants to find something inside a specific app.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string", "description": "App/service to search: 'spotify', 'youtube', 'youtube_music', 'soundcloud', 'twitch', 'bandcamp', 'reddit', 'github', 'files'" },
+                            "query": { "type": "string", "description": "Search query" }
+                        },
+                        "required": ["app", "query"]
+                    }
+                },
             ]}],
             "search": [{
                 "google_search": {}
@@ -799,6 +811,21 @@ Singleton {
                         }
                     }
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_app",
+                        "description": "Search within a specific app or service: spotify, youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "App to search in" },
+                                "query": { "type": "string", "description": "Search query" }
+                            },
+                            "required": ["app", "query"]
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -1145,6 +1172,21 @@ Singleton {
                                 "timeout": { "type": "integer", "description": "Max seconds (default 15)" }
                             },
                             "required": ["app"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_app",
+                        "description": "Search within a specific app or service: spotify, youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "description": "App to search in" },
+                                "query": { "type": "string", "description": "Search query" }
+                            },
+                            "required": ["app", "query"]
                         }
                     }
                 },
@@ -2082,6 +2124,37 @@ Singleton {
             clipboardImageProc.targetPath = clipPath;
             clipboardImageProc.command = ["bash", "-c", `wl-paste --type image/png > "${clipPath}" 2>&1 && echo "saved" || echo "no_image"`];
             clipboardImageProc.running = true;
+        } else if (name === "search_app") {
+            const app = (args.app || "").toLowerCase().replace(/[_\s]/g, "");
+            const query = args.query || "";
+            if (!query) { addFunctionOutputMessage(name, "Invalid: query is required"); requester.makeRequest(); return; }
+            const encoded = encodeURIComponent(query);
+            let uri;
+            switch (app) {
+                case "spotify":       uri = `spotify:search:${encoded}`; break;
+                case "youtube":       uri = `https://youtube.com/search?q=${encoded}`; break;
+                case "youtubemusic":  uri = `https://music.youtube.com/search?q=${encoded}`; break;
+                case "soundcloud":    uri = `https://soundcloud.com/search?q=${encoded}`; break;
+                case "twitch":        uri = `https://twitch.tv/search?term=${encoded}`; break;
+                case "bandcamp":      uri = `https://bandcamp.com/search?q=${encoded}`; break;
+                case "reddit":        uri = `https://reddit.com/search?q=${encoded}`; break;
+                case "github":        uri = `https://github.com/search?q=${encoded}`; break;
+                case "files": {
+                    const filesMsg = createFunctionOutputMessage(name, "", false);
+                    const filesId = idForMessage(filesMsg);
+                    root.messageIDs = [...root.messageIDs, filesId];
+                    root.messageByID[filesId] = filesMsg;
+                    commandExecutionProc.message = filesMsg;
+                    commandExecutionProc.baseMessageContent = filesMsg.content;
+                    commandExecutionProc.shellCommand = `find "$HOME" -iname "*${query.replace(/"/g, '\\"')}*" -not -path '*/.git/*' 2>/dev/null | head -20`;
+                    commandExecutionProc.running = true;
+                    return;
+                }
+                default: uri = `https://google.com/search?q=${encoded}+site:${app}`; break;
+            }
+            Quickshell.execDetached(["xdg-open", uri]);
+            addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}"`);
+            requester.makeRequest();
         } else if (name === "show_plan") {
             const title = args.title || "Task Plan";
             const steps = args.steps || [];
