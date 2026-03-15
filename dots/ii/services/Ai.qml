@@ -1784,6 +1784,7 @@ Singleton {
         } else if (name === "set_shell_config") {
             if (!args.changes || !Array.isArray(args.changes)) {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `changes` array."));
+                requester.makeRequest();
                 return;
             }
             let results = [];
@@ -1804,6 +1805,7 @@ Singleton {
         } else if (name === "run_shell_command") {
             if (!args.command || args.command.length === 0) {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `command`."));
+                requester.makeRequest();
                 return;
             }
             // Auto-approve safe read-only commands
@@ -1826,6 +1828,7 @@ Singleton {
         } else if (name === "web_search") {
             if (!args.query || args.query.length === 0) {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `query`."));
+                requester.makeRequest();
                 return;
             }
             const responseMessage = createFunctionOutputMessage(name, "", false);
@@ -1840,6 +1843,7 @@ Singleton {
             const content = args.content || "";
             if (!content) {
                 addFunctionOutputMessage(name, "Invalid: content is required");
+                requester.makeRequest();
                 return;
             }
             const existing = memoryFileView.text() || "";
@@ -1854,6 +1858,7 @@ Singleton {
             const title = args.title || "";
             if (!title) {
                 addFunctionOutputMessage(name, "Invalid: title is required");
+                requester.makeRequest();
                 return;
             }
             Todo.addTask(title);
@@ -1954,6 +1959,7 @@ Singleton {
             const target = args.process || "";
             if (!target) {
                 addFunctionOutputMessage(name, "Invalid: process is required");
+                requester.makeRequest();
                 return;
             }
             const killCmd = `pkill -f "${target.replace(/"/g, '\\"')}" 2>&1 && echo "Killed: ${target}" || echo "No process found: ${target}"`;
@@ -1970,13 +1976,13 @@ Singleton {
             screenshotProc.running = true;
         } else if (name === "launch_app") {
             const app = args.app || "";
-            if (!app) { addFunctionOutputMessage(name, "Invalid: app is required"); return; }
+            if (!app) { addFunctionOutputMessage(name, "Invalid: app is required"); requester.makeRequest(); return; }
             Quickshell.execDetached(["bash", "-c", `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1`]);
             addFunctionOutputMessage(name, `Launched: ${app}`);
             requester.makeRequest();
         } else if (name === "open_file") {
             const path = args.path || "";
-            if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); return; }
+            if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); requester.makeRequest(); return; }
             Quickshell.execDetached(["xdg-open", path]);
             addFunctionOutputMessage(name, `Opened: ${path}`);
             requester.makeRequest();
@@ -1996,7 +2002,7 @@ Singleton {
             requester.makeRequest();
         } else if (name === "calculate") {
             const expression = args.expression || "";
-            if (!expression) { addFunctionOutputMessage(name, "Invalid: expression is required"); return; }
+            if (!expression) { addFunctionOutputMessage(name, "Invalid: expression is required"); requester.makeRequest(); return; }
             const calcMsg = createFunctionOutputMessage(name, "", false);
             const calcId = idForMessage(calcMsg);
             root.messageIDs = [...root.messageIDs, calcId];
