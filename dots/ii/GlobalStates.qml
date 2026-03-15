@@ -31,9 +31,16 @@ Singleton {
     property bool superReleaseMightTrigger: true
     property bool wallpaperSelectorOpen: false
     property bool workspaceShowNumbers: true
+    property bool isScrollingLayout: false
 
     property bool dashboardPanelOpen: false // formerly sidebarRightOpen
     property bool policiesPanelOpen: false  // formerly sidebarLeftOpen
+
+    // Pending text to pre-fill the AI chat input (cleared after AiChat consumes it)
+    property string pendingAiInput: ""
+    // STT state — toggled by voiceInput shortcut, consumed by AiChat
+    property bool sttRecording: false
+    property bool sttToggleRequested: false
 
     readonly property bool effectiveLeftOpen: {
         switch (Config.options.sidebar.position) {
@@ -75,6 +82,26 @@ Singleton {
     }
 
     GlobalShortcut {
+        name: "clipboardToAi"
+        description: "Open AI sidebar pre-filled with clipboard text"
+        onPressed: {
+            root.pendingAiInput = Quickshell.clipboardText ?? "";
+            root.policiesPanelOpen = true;
+            Persistent.states.sidebar.policies.tab = 0;
+        }
+    }
+
+    GlobalShortcut {
+        name: "voiceInput"
+        description: "Toggle voice recording for AI chat STT"
+        onPressed: {
+            root.policiesPanelOpen = true;
+            Persistent.states.sidebar.policies.tab = 0;
+            root.sttToggleRequested = !root.sttRecording;
+        }
+    }
+
+    GlobalShortcut {
         name: "workspaceNumber"
         description: "Hold to show workspace numbers, release to show icons"
         onPressed: {
@@ -82,6 +109,16 @@ Singleton {
         }
         onReleased: {
             root.superDown = false
+        }
+    }
+
+    Process {
+        running: true
+        command: ["bash", "-c", "hyprctl getoption general:layout | grep 'str:' | awk '{print $2}'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                GlobalStates.isScrollingLayout = this.text.trim() === "scrolling"
+            }
         }
     }
 }
