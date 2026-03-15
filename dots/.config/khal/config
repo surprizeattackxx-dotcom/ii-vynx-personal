@@ -1,0 +1,17 @@
+[calendars]
+
+[[google]]
+path = ~/.local/share/vdirsyncer/google_calendar/
+type = discover
+color = light blue
+
+[sqlite]
+path = ~/.local/share/khal/khal.db
+
+[locale]
+timeformat = %H:%M
+dateformat = %d/%m/%Y
+longdateformat = %d %b %Y
+datetimeformat = %d/%m/%Y %H:%M
+longdatetimeformat = %d %b %Y %H:%M
+firstweekday = 0
