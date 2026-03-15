@@ -16,6 +16,7 @@ StyledPopup {
         implicitHeight: mainLayout.implicitHeight
 
         function formatKB(kb)  { return (kb / (1024 * 1024)).toFixed(1) + " GB" }
+        function formatRate(kbs) { return kbs >= 1024 ? (kbs / 1024).toFixed(1) + " MB/s" : Math.round(kbs) + " KB/s" }
         function usageColor(r) {
             if (r < 0.60) return Appearance.colors.colSuccess;
             if (r < 0.80) return Appearance.colors.colWarning;
@@ -186,9 +187,10 @@ StyledPopup {
             ResourceCard {
                 accent: "#81C784"; resourceName: "Disk"; ratio: content.diskRatio
                 stats: [
-                    {label:"Used",  value:content.diskUsed,  color:content.usageColor(content.diskRatio)},
-                    {label:"Free",  value:content.diskFree},
-                    {label:"Total", value:content.diskTotal,  color:Appearance.colors.colSubtext}
+                    {label:"Used", value:content.diskUsed,                              color:content.usageColor(content.diskRatio)},
+                    {label:"Free", value:content.diskFree},
+                    {label:"R",    value:content.formatRate(ResourceUsage.diskReadRate), color:Appearance.colors.colSubtext},
+                    {label:"W",    value:content.formatRate(ResourceUsage.diskWriteRate),color:Appearance.colors.colSubtext}
                 ]
             }
         }

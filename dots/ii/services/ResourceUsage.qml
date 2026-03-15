@@ -22,6 +22,11 @@ Singleton {
     property real cpuUsage: 0
     property var previousCpuStats
 
+    // Disk I/O rates in KB/s
+    property real diskReadRate: 0
+    property real diskWriteRate: 0
+    property var previousDiskStats
+
     property string maxAvailableMemoryString: kbToGbString(ResourceUsage.memoryTotal)
     property string maxAvailableSwapString: kbToGbString(ResourceUsage.swapTotal)
     property string maxAvailableCpuString: "--"
@@ -72,6 +77,7 @@ Singleton {
             fileMeminfo.reload()
             fileStat.reload()
             fileCpuTemp.reload()
+            fileDiskstats.reload()
             const rawCpuTemp = parseFloat(fileCpuTemp.text())
             if (!isNaN(rawCpuTemp) && rawCpuTemp > 0) cpuTemp = rawCpuTemp / 1000
 
@@ -99,6 +105,26 @@ Singleton {
                 previousCpuStats = { total, idle }
             }
 
+            // Parse disk I/O rates from /proc/diskstats
+            const now = Date.now()
+            let totalRead = 0, totalWritten = 0
+            for (const line of fileDiskstats.text().trim().split('\n')) {
+                const p = line.trim().split(/\s+/)
+                // Match physical drives only: sda, nvme0n1, vda — not partitions (sda1, nvme0n1p1)
+                if (p.length >= 10 && /^(sd[a-z]|nvme\d+n\d+|vd[a-z]|hd[a-z])$/.test(p[2])) {
+                    totalRead    += parseInt(p[5]) || 0
+                    totalWritten += parseInt(p[9]) || 0
+                }
+            }
+            if (previousDiskStats) {
+                const elapsed = (now - previousDiskStats.timestamp) / 1000
+                if (elapsed > 0) {
+                    diskReadRate  = (totalRead    - previousDiskStats.read)    * 512 / elapsed / 1024
+                    diskWriteRate = (totalWritten - previousDiskStats.written) * 512 / elapsed / 1024
+                }
+            }
+            previousDiskStats = { read: totalRead, written: totalWritten, timestamp: now }
+
             root.updateHistories()
             interval = Config.options?.resources?.updateInterval ?? 3000
         }
@@ -107,6 +133,7 @@ Singleton {
 	FileView { id: fileMeminfo; path: "/proc/meminfo" }
     FileView { id: fileStat; path: "/proc/stat" }
     FileView { id: fileCpuTemp; path: "/sys/class/thermal/thermal_zone4/temp" }
+    FileView { id: fileDiskstats; path: "/proc/diskstats" }
 
     Process {
         id: findCpuMaxFreqProc
