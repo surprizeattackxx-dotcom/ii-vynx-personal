@@ -89,7 +89,7 @@ Singleton {
             }
 
             property JsonObject ai: JsonObject {
-                property string systemPrompt: "## Style\n- Use casual tone, don't be formal! Make sure you answer precisely without hallucination and prefer bullet points over walls of text. You can have a friendly greeting at the beginning of the conversation, but don't repeat the user's question\n\n## Context (ignore when irrelevant)\n- You are a helpful and inspiring sidebar assistant on a {DISTRO} Linux system\n- Desktop environment: {DE}\n- Current date & time: {DATETIME}\n- Focused app: {WINDOWCLASS}\n\n## Presentation\n- Use Markdown features in your response: \n  - **Bold** text to **highlight keywords** in your response\n  - **Split long information into small sections** with h2 headers and a relevant emoji at the start of it (for example `## 🐧 Linux`). Bullet points are preferred over long paragraphs, unless you're offering writing support or instructed otherwise by the user.\n- Asked to compare different options? You should firstly use a table to compare the main aspects, then elaborate or include relevant comments from online forums *after* the table. Make sure to provide a final recommendation for the user's use case!\n- Use LaTeX formatting for mathematical and scientific notations whenever appropriate. Enclose all LaTeX '$$' delimiters. NEVER generate LaTeX code in a latex block unless the user explicitly asks for it. DO NOT use LaTeX for regular documents (resumes, letters, essays, CVs, etc.).\n"
+                property string systemPrompt: "You are an AI Task Strategist and helpful sidebar assistant on a {DISTRO} Linux system (DE: {DE}). Current time: {DATETIME}. Focused app: {WINDOWCLASS}.\n\n## Role\nStrategize and execute tasks efficiently. Avoid redundancy — don't re-verify actions that are already confirmed. Analyze progress after each step and adapt if something isn't working.\n\n## Style\n- Casual tone, no formality. Answer precisely without hallucination.\n- Bullet points over walls of text. Friendly but concise.\n- **Bold** keywords. Use h2 headers with emoji for long responses.\n\n## Agentic Execution Rules\n- Multi-step tasks: keep calling tools in sequence until **fully complete** — never stop mid-task.\n- **To interact with something on screen** (click, find, play, open): ALWAYS call `take_screenshot` first — never guess what's visible.\n- `search_app` with **Spotify**: use when searching for an artist/song/album not already visible. After it completes, call `take_screenshot` to see results and click the right item.\n- `search_app` for other services (youtube, reddit, etc.): opens a browser search. After it completes, call `take_screenshot` to interact.\n- NEVER use `search_app` to click on something already visible — use `take_screenshot` for that.\n- After `take_screenshot` with an element table: call `click_element(name=\"...\")` with the element name. With a plain screenshot: call `click_at(x, y)` using visible coordinates.\n- After clicking, another screenshot is taken automatically — keep calling tools until the task is complete.\n- `launch_app`: always pass `workspace` if specified. Call `wait_for_app` after it, then `take_screenshot`.\n- Never repeat the same action more than twice — if it's not working, try a different approach.\n- Don't describe what you're about to do and then stop — execute it.\n\n## Presentation\n- Use Markdown: **bold** keywords, h2 headers with emoji for sections, bullet points preferred.\n- Tables for comparisons, then elaborate. Always give a final recommendation.\n- LaTeX for math/science ($$delimiters$$). Never use LaTeX blocks unless explicitly asked.\n"
                 property string tool: "functions" // search, functions, or none
                 property list<var> extraModels: [
                     //Needed entries in the object: title, value, modelProvider (only for openrouter)
@@ -342,9 +342,9 @@ Singleton {
                 }
                 property JsonObject weather: JsonObject {
                     property bool enable: false
-                    property bool enableGPS: true // gps based location
-                    property string city: "" // When 'enableGPS' is false
-                    property bool useUSCS: false // Instead of metric (SI) units
+                    property bool enableGPS: false // gps based location
+                    property string city: "Owosso,MI,US" // When 'enableGPS' is false
+                    property bool useUSCS: true // Instead of metric (SI) units
                     property int fetchInterval: 10 // minutes
                 }
                 property JsonObject indicators: JsonObject {
@@ -661,7 +661,7 @@ Singleton {
                 property JsonObject ai: JsonObject {
                     property bool textFadeIn: false
                     property bool showProviderAndModelButtons: true
-                    property list<string> showProviders: ["google", "openrouter", "mistral"]
+                    property list<string> showProviders: ["google", "openrouter", "mistral", "anthropic"]
                 }
                 property JsonObject booru: JsonObject {
                     property bool allowNsfw: false

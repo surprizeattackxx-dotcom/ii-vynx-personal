@@ -397,6 +397,19 @@ Singleton {
                     "parameters": {}
                 },
                 {
+                    "name": "click_at",
+                    "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                            "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
+                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                        },
+                        "required": ["x", "y"]
+                    }
+                },
+                {
                     "name": "show_plan",
                     "description": "Before executing any multi-step task (2+ actions, app launching, system changes), present a numbered plan to the user and wait for their approval. After approval, execute each step in order using the appropriate tools. Always use this for complex or chained tasks.",
                     "parameters": {
@@ -441,6 +454,28 @@ Singleton {
                             "query": { "type": "string", "description": "Search query" }
                         },
                         "required": ["app", "query"]
+                    }
+                },
+                {
+                    "name": "type_text",
+                    "description": "Type text into the currently focused field or application using the keyboard. Use after clicking a text field with click_at. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "Text to type" }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "press_key",
+                    "description": "Press a keyboard key or combination. Examples: 'Return', 'ctrl+a', 'ctrl+c', 'Escape', 'Tab', 'ctrl+l'. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "key": { "type": "string", "description": "Key or combination to press, e.g. 'Return', 'ctrl+a', 'Escape'" }
+                        },
+                        "required": ["key"]
                     }
                 },
             ]}],
@@ -784,6 +819,22 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "click_at",
+                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                                "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            },
+                            "required": ["x", "y"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "show_plan",
                         "description": "Present a numbered multi-step task plan to the user for approval before executing. Use for any task with 2+ steps.",
                         "parameters": {
@@ -823,6 +874,34 @@ Singleton {
                                 "query": { "type": "string", "description": "Search query" }
                             },
                             "required": ["app", "query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "type_text",
+                        "description": "Type text into the currently focused field using the keyboard. Use after click_at on a text field. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to type" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "press_key",
+                        "description": "Press a keyboard key or combination, e.g. 'Return', 'ctrl+a', 'Escape', 'Tab'. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "key": { "type": "string", "description": "Key or combo to press" }
+                            },
+                            "required": ["key"]
                         }
                     }
                 },
@@ -1148,6 +1227,22 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "click_at",
+                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                                "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            },
+                            "required": ["x", "y"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "show_plan",
                         "description": "Present a numbered multi-step task plan to the user for approval before executing. Use for any task with 2+ steps.",
                         "parameters": {
@@ -1187,6 +1282,34 @@ Singleton {
                                 "query": { "type": "string", "description": "Search query" }
                             },
                             "required": ["app", "query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "type_text",
+                        "description": "Type text into the currently focused field using the keyboard. Use after click_at on a text field. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to type" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "press_key",
+                        "description": "Press a keyboard key or combination, e.g. 'Return', 'ctrl+a', 'Escape', 'Tab'. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "key": { "type": "string", "description": "Key or combo to press" }
+                            },
+                            "required": ["key"]
                         }
                     }
                 },
@@ -1338,6 +1461,16 @@ Singleton {
 
     property string requestScriptFilePath: "/tmp/quickshell/ai/request.sh"
     property string pendingFilePath: ""
+    // True while the AI requester process is running (streaming a response)
+    readonly property bool isGenerating: requester.running
+
+    // Screenshot scaling — used so 4K screenshots are downscaled to 1920px wide
+    // before sending to the model. click_at coords are in the scaled space.
+    property real lastScreenshotScale: 1.0
+    property int lastScreenshotWidth: 0
+    property int lastScreenshotHeight: 0
+    property int lastScreenshotOffsetX: 0
+    property int lastScreenshotOffsetY: 0
 
     Component.onCompleted: {
         setModel(currentModelId, false, false); // Do necessary setup for model
@@ -2012,9 +2145,26 @@ Singleton {
             message.functionPending = true;
         } else if (name === "take_screenshot") {
             const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
-            screenshotProc.targetPath = CF.FileUtils.trimFileProtocol(screenshotPath);
+            const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
+            screenshotProc.targetPath = dest;
             screenshotProc.message = message;
-            screenshotProc.command = ["bash", "-c", `grim "${CF.FileUtils.trimFileProtocol(screenshotPath)}" 2>&1`];
+            // Take screenshot, downscale to 1920px wide if needed, output IMAGE_SIZE and IMAGE_SCALE
+            const cmd = `
+DEST="${dest}"
+grim "$DEST" 2>&1 || exit 1
+IMG_W=$(identify -format '%w' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[0])" 2>/dev/null || echo 0)
+IMG_H=$(identify -format '%h' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[1])" 2>/dev/null || echo 0)
+SCALE=1
+if [ "$IMG_W" -gt 1920 ] 2>/dev/null; then
+  SCALE=$(python3 -c "print(round(${IMG_W}/1920, 4))")
+  NEW_W=1920
+  NEW_H=$(python3 -c "print(int(${IMG_H}*1920/${IMG_W}))")
+  magick "$DEST" -resize "${NEW_W}x${NEW_H}" "$DEST" 2>/dev/null
+fi
+echo "IMAGE_SIZE:${IMG_W}:${IMG_H}"
+echo "IMAGE_SCALE:${SCALE}"
+`;
+            screenshotProc.command = ["bash", "-c", cmd];
             screenshotProc.running = true;
         } else if (name === "launch_app") {
             const app = args.app || "";
@@ -2124,6 +2274,81 @@ Singleton {
             clipboardImageProc.targetPath = clipPath;
             clipboardImageProc.command = ["bash", "-c", `wl-paste --type image/png > "${clipPath}" 2>&1 && echo "saved" || echo "no_image"`];
             clipboardImageProc.running = true;
+        } else if (name === "click_at") {
+            const imgW   = root.lastScreenshotWidth  > 0 ? root.lastScreenshotWidth  : 1920;
+            const imgH   = root.lastScreenshotHeight > 0 ? root.lastScreenshotHeight : 1080;
+            const scale  = root.lastScreenshotScale  > 0 ? root.lastScreenshotScale  : 1.0;
+            const rawX   = parseFloat(args.x) || 0;
+            const rawY   = parseFloat(args.y) || 0;
+            const button = (args.button || "left").toLowerCase();
+            // Scale coords from screenshot space back to real display space
+            const sx = Math.max(0, Math.min(Math.round(rawX * scale), imgW)) + root.lastScreenshotOffsetX;
+            const sy = Math.max(0, Math.min(Math.round(rawY * scale), imgH)) + root.lastScreenshotOffsetY;
+            const ydoBtn = button === "right" ? "3" : button === "middle" ? "2" : "1";
+            addFunctionOutputMessage(name, `Clicking (${rawX}, ${rawY}) → screen (${sx}, ${sy})`);
+            // Move mouse and click, then take a new screenshot automatically
+            const clickCmd = `ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            Quickshell.execDetached(["bash", "-c", clickCmd]);
+            // After click, auto-take a fresh screenshot so the model can see the result
+            Qt.callLater(() => {
+                const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
+                const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
+                screenshotProc.targetPath = dest;
+                const cmd = `
+DEST="${dest}"
+grim "$DEST" 2>&1 || exit 1
+IMG_W=$(identify -format '%w' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[0])" 2>/dev/null || echo 0)
+IMG_H=$(identify -format '%h' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[1])" 2>/dev/null || echo 0)
+SCALE=1
+if [ "$IMG_W" -gt 1920 ] 2>/dev/null; then
+  SCALE=$(python3 -c "print(round(${IMG_W}/1920, 4))")
+  NEW_W=1920
+  NEW_H=$(python3 -c "print(int(${IMG_H}*1920/${IMG_W}))")
+  magick "$DEST" -resize "${NEW_W}x${NEW_H}" "$DEST" 2>/dev/null
+fi
+echo "IMAGE_SIZE:${IMG_W}:${IMG_H}"
+echo "IMAGE_SCALE:${SCALE}"
+`;
+                screenshotProc.command = ["bash", "-c", cmd];
+                screenshotProc.running = true;
+            });
+        } else if (name === "type_text") {
+            const text = args.text || "";
+            if (!text) { addFunctionOutputMessage(name, "Invalid: text is required"); requester.makeRequest(); return; }
+            const escaped = text.replace(/'/g, "'\\''");
+            Quickshell.execDetached(["bash", "-c", `ydotool type --key-delay 20 -- '${escaped}'`]);
+            addFunctionOutputMessage(name, `Typed: "${text.substring(0, 60)}${text.length > 60 ? "..." : ""}"`);
+            requester.makeRequest();
+        } else if (name === "press_key") {
+            const key = (args.key || "Return").trim();
+            // Convert common key names to ydotool key codes
+            const keyMap = {
+                "Return": "28", "Enter": "28", "Escape": "1", "Tab": "15",
+                "space": "57", "BackSpace": "14", "Delete": "111",
+                "Up": "103", "Down": "108", "Left": "105", "Right": "106",
+                "Home": "102", "End": "107", "Page_Up": "104", "Page_Down": "109",
+                "F1":"59","F2":"60","F3":"61","F4":"62","F5":"63","F6":"64",
+                "F7":"65","F8":"66","F9":"67","F10":"68","F11":"87","F12":"88",
+            };
+            // Handle combos like ctrl+a, ctrl+l, ctrl+w
+            const parts = key.toLowerCase().split("+");
+            const mods = { "ctrl": "29", "shift": "42", "alt": "56", "super": "125", "meta": "125" };
+            let keyCodes = [];
+            let pressDown = [], pressUp = [];
+            for (const part of parts) {
+                if (mods[part]) {
+                    keyCodes.push(mods[part]);
+                } else {
+                    const mapped = keyMap[args.key] || keyMap[part];
+                    if (mapped) keyCodes.push(mapped);
+                    else keyCodes.push("28"); // fallback to Enter
+                }
+            }
+            // Press all down then all up in reverse
+            const downArgs = keyCodes.map(c => `--key-codes ${c}`).join(" ");
+            Quickshell.execDetached(["bash", "-c", `ydotool key ${keyCodes.map(c => c + ":1").join(" ")} ${keyCodes.reverse().map(c => c + ":0").join(" ")}`]);
+            addFunctionOutputMessage(name, `Pressed: ${key}`);
+            requester.makeRequest();
         } else if (name === "search_app") {
             const app = (args.app || "").toLowerCase().replace(/[_\s]/g, "");
             const query = args.query || "";
@@ -2159,11 +2384,11 @@ Singleton {
             const title = args.title || "Task Plan";
             const steps = args.steps || [];
             const stepsText = steps.map((s, i) => `${i + 1}. **${s.description}**${s.tool ? ` *(${s.tool})*` : ""}`).join("\n");
-            const contentToAppend = `\n\n### 📋 ${title}\n\n${stepsText}\n\n*Approve to execute all steps?*`;
+            const approveCmd = `echo "Plan approved — executing ${steps.length} step(s)"`;
+            const contentToAppend = `\n\n### 📋 ${title}\n\n${stepsText}\n\n\`\`\`command\n${approveCmd}\n\`\`\``;
             message.rawContent += contentToAppend;
             message.content += contentToAppend;
-            // On approval the existing approveCommand flow runs this, signalling the AI to proceed
-            message.functionCall.args.command = `echo "Plan approved — executing ${steps.length} step(s)"`;
+            message.functionCall.args.command = approveCmd;
             message.functionPending = true;
         } else if (name === "wait_for_app") {
             const app = (args.app || "").replace(/"/g, '\\"');
@@ -2197,6 +2422,24 @@ Singleton {
         property AiMessageData message
         stdout: StdioCollector {
             onStreamFinished: {
+                // Parse IMAGE_SIZE and IMAGE_SCALE from bash output
+                const lines = this.text.split("\n");
+                let imgW = 0, imgH = 0, scale = 1.0;
+                for (const line of lines) {
+                    if (line.startsWith("IMAGE_SIZE:")) {
+                        const parts = line.split(":");
+                        imgW = parseInt(parts[1]) || 0;
+                        imgH = parseInt(parts[2]) || 0;
+                    } else if (line.startsWith("IMAGE_SCALE:")) {
+                        scale = parseFloat(line.split(":")[1]) || 1.0;
+                    }
+                }
+                root.lastScreenshotWidth  = imgW;
+                root.lastScreenshotHeight = imgH;
+                root.lastScreenshotScale  = scale;
+                root.lastScreenshotOffsetX = 0;
+                root.lastScreenshotOffsetY = 0;
+
                 root.pendingFilePath = screenshotProc.targetPath;
                 addFunctionOutputMessage("take_screenshot", "Screenshot taken. Now analyzing...");
                 requester.makeRequest();

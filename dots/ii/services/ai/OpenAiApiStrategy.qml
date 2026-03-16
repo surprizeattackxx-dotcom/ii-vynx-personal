@@ -40,7 +40,7 @@ ApiStrategy {
             cleanData = cleanData.slice(5).trim();
         }
 
-        // console.log("[AI] OpenAI: Data:", cleanData);
+        if (cleanData.includes("tool") || cleanData.includes("finish")) console.log("[AI] OpenAI chunk:", cleanData.substring(0, 500));
 
         if (!cleanData || cleanData.startsWith(":")) return {};
         if (cleanData === "[DONE]") {
@@ -98,13 +98,26 @@ ApiStrategy {
             }
 
             const finishReason = dataJson.choices?.[0]?.finish_reason;
-            if (finishReason === "tool_calls" && pendingToolCall?.name) {
-                let parsedArgs = {};
-                try { parsedArgs = JSON.parse(pendingToolCall.arguments); } catch(e) {}
-                console.log("[AI] Tool call fired:", pendingToolCall.name, "args:", pendingToolCall.arguments, "parsed:", JSON.stringify(parsedArgs));
-                const call = { name: pendingToolCall.name, args: parsedArgs };
-                pendingToolCall = null;
-                return { functionCall: call };
+            if (finishReason === "tool_calls") {
+                // Ollama sometimes puts the full tool call in message.tool_calls on the
+                // final chunk instead of streaming it via delta.tool_calls. Fall back to that.
+                if (!pendingToolCall?.name) {
+                    const msgToolCall = dataJson.choices?.[0]?.message?.tool_calls?.[0];
+                    if (msgToolCall?.function?.name) {
+                        pendingToolCall = {
+                            name: msgToolCall.function.name,
+                            arguments: msgToolCall.function.arguments || "",
+                        };
+                    }
+                }
+                if (pendingToolCall?.name) {
+                    let parsedArgs = {};
+                    try { parsedArgs = JSON.parse(pendingToolCall.arguments); } catch(e) {}
+                    console.log("[AI] Tool call fired:", pendingToolCall.name, "args:", pendingToolCall.arguments, "parsed:", JSON.stringify(parsedArgs));
+                    const call = { name: pendingToolCall.name, args: parsedArgs };
+                    pendingToolCall = null;
+                    return { functionCall: call };
+                }
             }
 
             if (dataJson.usage) {

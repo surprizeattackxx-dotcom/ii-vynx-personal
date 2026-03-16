@@ -15,13 +15,10 @@ Singleton {
     readonly property bool useUSCS: Config.options.bar.weather.useUSCS
     property bool gpsActive: Config.options.bar.weather.enableGPS
 
-    // Guard to prevent getData() firing before Config is ready
     property bool ready: false
-    property string weatherApiKey: ""
 
     onUseUSCSChanged: { if (root.ready) root.getData(); }
     onCityChanged:    { if (root.ready) root.getData(); }
-    onWeatherApiKeyChanged: { if (root.ready && root.weatherApiKey) root.getData(); }
 
     property bool isLoading: false
     property bool hasError: false
@@ -58,38 +55,8 @@ Singleton {
     // forecast: list of { dayLabel, wCode, tempMin, tempMax, description }
     property var forecast: []
 
-    // alerts: list of { event } — generated from current conditions
+    // alerts: list of { event }
     property var alerts: []
-
-    function generateAlerts(current) {
-        const newAlerts = []
-        const windMs    = current?.wind?.speed  || 0
-        const tempC     = current?.main?.temp   || 0
-        const uvi       = root.data.uv          || 0
-        const wCode     = root.data.wCode
-
-        const windKmh = windMs * 3.6
-        if (windKmh >= 50) {
-            const windStr = root.useUSCS
-            ? (windMs * 2.23694).toFixed(1) + " mph"
-            : windKmh.toFixed(1) + " km/h"
-            newAlerts.push({ event: Translation.tr("Wind Advisory") + " — " + windStr })
-        }
-
-        if (tempC >= 35) {
-            const tStr = root.useUSCS ? Math.round(tempC * 9/5 + 32) + "°F" : Math.round(tempC) + "°C"
-            newAlerts.push({ event: Translation.tr("Heat Advisory") + " — " + tStr })
-        } else if (tempC <= -10) {
-            const tStr = root.useUSCS ? Math.round(tempC * 9/5 + 32) + "°F" : Math.round(tempC) + "°C"
-            newAlerts.push({ event: Translation.tr("Freeze Warning") + " — " + tStr })
-        }
-
-        if (uvi >= 8)     newAlerts.push({ event: Translation.tr("High UV Index") + " — " + uvi })
-            if (wCode === 389) newAlerts.push({ event: Translation.tr("Thunderstorm Warning") })
-                if (wCode === 338) newAlerts.push({ event: Translation.tr("Winter Storm Warning") })
-
-                    root.alerts = newAlerts
-    }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -98,209 +65,216 @@ Singleton {
         return dirs[Math.round(deg / 22.5) % 16];
     }
 
-    function formatUnixTime(unix) {
-        const d = new Date(unix * 1000);
-        return d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
+    function isoTimeToHHMM(isoStr) {
+        if (!isoStr) return "";
+        // "2024-03-16T06:42" → "06:42"
+        const t = isoStr.split("T")[1] || "";
+        return t.substring(0, 5);
     }
 
-    function formatUnixDate(unix) {
-        const d = new Date(unix * 1000);
+    function isoDateToDayLabel(dateStr) {
+        if (!dateStr) return "";
+        const d = new Date(dateStr + "T12:00:00");
         const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
         return days[d.getDay()];
     }
 
-    function owmIdToWCode(id) {
-        if (id >= 200 && id < 300) return 389;
-        if (id >= 300 && id < 400) return 266;
-        if (id >= 500 && id < 510) return 308;
-        if (id === 511)            return 329;
-        if (id >= 520 && id < 600) return 308;
-        if (id >= 600 && id < 700) return 338;
-        if (id >= 700 && id < 800) return 143;
-        if (id === 800)            return 113;
-        if (id === 801)            return 116;
-        if (id === 802)            return 119;
+    // Map WMO weather codes to the internal wCode values used by Icons.getWeatherIcon
+    function wmoToWCode(wmo) {
+        if (wmo === 0)            return 113;  // clear sky
+        if (wmo === 1)            return 116;  // mainly clear
+        if (wmo === 2)            return 119;  // partly cloudy
+        if (wmo === 3)            return 122;  // overcast
+        if (wmo === 45 || wmo === 48) return 143; // fog
+        if (wmo === 51 || wmo === 53 || wmo === 55) return 266; // drizzle
+        if (wmo === 56 || wmo === 57) return 281; // freezing drizzle
+        if (wmo === 61)           return 296;  // slight rain
+        if (wmo === 63)           return 302;  // moderate rain
+        if (wmo === 65)           return 308;  // heavy rain
+        if (wmo === 66 || wmo === 67) return 311; // freezing rain
+        if (wmo === 71)           return 323;  // slight snow
+        if (wmo === 73)           return 329;  // moderate snow
+        if (wmo === 75)           return 338;  // heavy snow
+        if (wmo === 77)           return 335;  // snow grains
+        if (wmo === 80)           return 353;  // slight showers
+        if (wmo === 81)           return 356;  // moderate showers
+        if (wmo === 82)           return 359;  // violent showers
+        if (wmo === 85)           return 368;  // slight snow showers
+        if (wmo === 86)           return 371;  // heavy snow showers
+        if (wmo === 95)           return 389;  // thunderstorm
+        if (wmo === 96)           return 392;  // thunderstorm + slight hail
+        if (wmo === 99)           return 395;  // thunderstorm + heavy hail
         return 122;
+    }
+
+    function wmoToDescription(wmo) {
+        const map = {
+            0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+            45: "Fog", 48: "Depositing rime fog",
+            51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+            56: "Light freezing drizzle", 57: "Dense freezing drizzle",
+            61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+            66: "Light freezing rain", 67: "Heavy freezing rain",
+            71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+            77: "Snow grains",
+            80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+            85: "Slight snow showers", 86: "Heavy snow showers",
+            95: "Thunderstorm",
+            96: "Thunderstorm, slight hail", 99: "Thunderstorm, heavy hail",
+        };
+        return map[wmo] || "Unknown";
     }
 
     function cToF(c) { return Math.round(c * 9/5 + 32); }
 
-    // ── Current weather ───────────────────────────────────────────────────────
+    // ── Parse Open-Meteo response ─────────────────────────────────────────────
 
-    function refineData(current, uvi) {
+    function refineData(parsed) {
+        const cur = parsed.current || {};
+        const daily = parsed.daily || {};
+        const cityName = parsed.city_name || root.city.split(",")[0] || "City";
+
+        const windSpeedMs  = cur.wind_speed_10m   || 0;  // m/s (requested unit)
+        const windDeg      = cur.wind_direction_10m || 0;
+        const humidityRaw  = cur.relative_humidity_2m || 0;
+        const visibM       = cur.visibility        || 0;  // meters
+        const pressHpa     = cur.pressure_msl      || 0;
+        const precipMM     = cur.precipitation     || 0;
+        const wmo          = cur.weather_code      ?? 0;
+        const uvIndex      = cur.uv_index          ?? 0;
+        const cloudPct     = cur.cloud_cover       ?? 0;
+        const tempC        = cur.temperature_2m    ?? 0;
+        const feelsC       = cur.apparent_temperature ?? 0;
+        const windKmh      = windSpeedMs * 3.6;
+
         let temp = {};
-        const windSpeedMs = current?.wind?.speed  || 0;
-        const windDeg     = current?.wind?.deg     || 0;
-        const humidityRaw = current?.main?.humidity || 0;
-        const visibM      = current?.visibility    || 0;
-        const pressHpa    = current?.main?.pressure || 0;
-        const precipMM    = current?.rain?.["1h"] ?? current?.snow?.["1h"] ?? 0;
-
-        temp.uv          = Math.round(uvi ?? 0);
+        temp.uv          = Math.round(uvIndex);
         temp.humidity    = humidityRaw + "%";
         temp.windDir     = degreesToWindDir(windDeg);
-        temp.wCode       = owmIdToWCode(current?.weather?.[0]?.id ?? 800);
-        temp.city        = current?.name || "City";
-        temp.description = current?.weather?.[0]?.description || "";
-        temp.cloudCover  = (current?.clouds?.all ?? 0) + "%";
+        temp.wCode       = wmoToWCode(wmo);
+        temp.city        = cityName;
+        temp.description = wmoToDescription(wmo);
+        temp.cloudCover  = cloudPct + "%";
+        temp.dewPoint    = "";
+        temp.sunrise     = isoTimeToHHMM((daily.sunrise || [])[0] || "");
+        temp.sunset      = isoTimeToHHMM((daily.sunset  || [])[0] || "");
 
-        temp.sunrise = formatUnixTime(current?.sys?.sunrise || 0);
-        temp.sunset  = formatUnixTime(current?.sys?.sunset  || 0);
-
-        // Note: dew_point is not available from /data/2.5/weather — always blank
-        temp.dewPoint = "";
+        // daily min/max come from daily[0]
+        const dailyMinC  = (daily.temperature_2m_min || [])[0] ?? tempC;
+        const dailyMaxC  = (daily.temperature_2m_max || [])[0] ?? tempC;
 
         if (root.useUSCS) {
-            temp.wind          = (windSpeedMs * 2.23694).toFixed(1) + " mph";
+            temp.wind          = (windKmh / 1.60934).toFixed(1) + " mph";
             temp.precip        = (precipMM / 25.4).toFixed(2) + " in";
             temp.visib         = (visibM / 1609.34).toFixed(1) + " mi";
             temp.press         = (pressHpa * 0.02953).toFixed(2) + " inHg";
-            temp.temp          = cToF(current?.main?.temp       ?? 0) + "°F";
-            temp.tempFeelsLike = cToF(current?.main?.feels_like ?? 0) + "°F";
-            temp.tempMin       = cToF(current?.main?.temp_min   ?? 0) + "°F";
-            temp.tempMax       = cToF(current?.main?.temp_max   ?? 0) + "°F";
+            temp.temp          = cToF(tempC) + "°F";
+            temp.tempFeelsLike = cToF(feelsC) + "°F";
+            temp.tempMin       = cToF(dailyMinC) + "°F";
+            temp.tempMax       = cToF(dailyMaxC) + "°F";
         } else {
-            temp.wind          = (windSpeedMs * 3.6).toFixed(1) + " km/h";
+            temp.wind          = windKmh.toFixed(1) + " km/h";
             temp.precip        = precipMM.toFixed(1) + " mm";
             temp.visib         = (visibM / 1000).toFixed(1) + " km";
             temp.press         = pressHpa + " hPa";
-            temp.temp          = Math.round(current?.main?.temp       ?? 0) + "°C";
-            temp.tempFeelsLike = Math.round(current?.main?.feels_like ?? 0) + "°C";
-            temp.tempMin       = Math.round(current?.main?.temp_min   ?? 0) + "°C";
-            temp.tempMax       = Math.round(current?.main?.temp_max   ?? 0) + "°C";
+            temp.temp          = Math.round(tempC) + "°C";
+            temp.tempFeelsLike = Math.round(feelsC) + "°C";
+            temp.tempMin       = Math.round(dailyMinC) + "°C";
+            temp.tempMax       = Math.round(dailyMaxC) + "°C";
         }
 
         temp.lastRefresh = DateTime.time + " • " + DateTime.date;
         root.data = temp;
-        root.generateAlerts(current);
+        root.generateAlerts(cur);
     }
 
-    // ── 5-day forecast ────────────────────────────────────────────────────────
-    // /forecast returns 3-hourly slots. We collapse them into one entry per day
-    // by grouping on the date string, then picking min/max temp and the most
-    // common condition id for that day.
-
-    function refineForecast(forecastData) {
-        const list = forecastData?.list ?? [];
-        const byDay = {};
-        const order = [];
+    function refineForecast(parsed) {
+        const daily = parsed.daily || {};
+        const times    = daily.time              || [];
+        const codes    = daily.weather_code      || [];
+        const mins     = daily.temperature_2m_min || [];
+        const maxs     = daily.temperature_2m_max || [];
         const todayStr = new Date().toISOString().slice(0, 10);
+        const unit     = root.useUSCS ? "°F" : "°C";
 
-        for (const slot of list) {
-            const d = new Date(slot.dt * 1000);
-            const key = d.toISOString().slice(0, 10);
-            if (key === todayStr) continue;
-            if (!byDay[key]) {
-                byDay[key] = { dt: slot.dt, mins: [], maxs: [], ids: [], descs: [] };
-                order.push(key);
-            }
-            byDay[key].mins.push(slot.main?.temp_min ?? slot.main?.temp ?? 0);
-            byDay[key].maxs.push(slot.main?.temp_max ?? slot.main?.temp ?? 0);
-            byDay[key].ids.push(slot.weather?.[0]?.id ?? 800);
-            byDay[key].descs.push(slot.weather?.[0]?.description || "");
+        const days = [];
+        for (let i = 0; i < times.length && days.length < 5; i++) {
+            if (times[i] === todayStr) continue;
+            const wmo    = codes[i] ?? 0;
+            const rawMin = mins[i]  ?? 0;
+            const rawMax = maxs[i]  ?? 0;
+            days.push({
+                dayLabel:    isoDateToDayLabel(times[i]),
+                wCode:       wmoToWCode(wmo),
+                tempMin:     (root.useUSCS ? cToF(rawMin) : Math.round(rawMin)) + unit,
+                tempMax:     (root.useUSCS ? cToF(rawMax) : Math.round(rawMax)) + unit,
+                description: wmoToDescription(wmo),
+            });
+        }
+        root.forecast = days;
+    }
+
+    function generateAlerts(cur) {
+        const newAlerts = [];
+        const windSpeedMs = cur.wind_speed_10m || 0;
+        const tempC       = cur.temperature_2m || 0;
+        const uvi         = root.data.uv       || 0;
+        const wCode       = root.data.wCode;
+        const windKmh     = windSpeedMs * 3.6;
+
+        if (windKmh >= 50) {
+            const windStr = root.useUSCS
+                ? (windKmh / 1.60934).toFixed(1) + " mph"
+                : windKmh.toFixed(1) + " km/h";
+            newAlerts.push({ event: Translation.tr("Wind Advisory") + " — " + windStr });
         }
 
-        const unit = root.useUSCS ? "°F" : "°C";
-        const days = order.slice(0, 5).map(key => {
-            const g = byDay[key];
-            const rawMin = Math.min(...g.mins);
-            const rawMax = Math.max(...g.maxs);
-            // most frequent condition id
-            const freq = {};
-            let bestId  = g.ids[0];
-            let bestN   = 0;
-            let bestIdx = 0;
-            for (let i = 0; i < g.ids.length; i++) {
-                const id = g.ids[i];
-                freq[id] = (freq[id] || 0) + 1;
-                if (freq[id] > bestN) { bestN = freq[id]; bestId = id; bestIdx = i; }
-            }
-            const tMin = root.useUSCS ? cToF(rawMin) : Math.round(rawMin);
-            const tMax = root.useUSCS ? cToF(rawMax) : Math.round(rawMax);
-            return {
-                dayLabel:    formatUnixDate(g.dt),
-                                           wCode:       owmIdToWCode(bestId),
-                                           tempMin:     tMin + unit,
-                                           tempMax:     tMax + unit,
-                                           description: g.descs[bestIdx] || "",
-            };
-        });
-        root.forecast = days;
+        if (tempC >= 35) {
+            const tStr = root.useUSCS ? cToF(tempC) + "°F" : Math.round(tempC) + "°C";
+            newAlerts.push({ event: Translation.tr("Heat Advisory") + " — " + tStr });
+        } else if (tempC <= -10) {
+            const tStr = root.useUSCS ? cToF(tempC) + "°F" : Math.round(tempC) + "°C";
+            newAlerts.push({ event: Translation.tr("Freeze Warning") + " — " + tStr });
+        }
+
+        if (uvi >= 8)      newAlerts.push({ event: Translation.tr("High UV Index") + " — " + uvi });
+        if (wCode === 389) newAlerts.push({ event: Translation.tr("Thunderstorm Warning") });
+        if (wCode === 338) newAlerts.push({ event: Translation.tr("Winter Storm Warning") });
+
+        root.alerts = newAlerts;
     }
 
     // ── Fetch ─────────────────────────────────────────────────────────────────
 
+    // Open-Meteo params (wind in m/s, visibility in meters, pressure in hPa)
+    readonly property string _weatherParams: "current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,cloud_cover,pressure_msl,visibility,uv_index,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum&timezone=auto&forecast_days=6&wind_speed_unit=ms"
+
     function getData() {
-        const apiKey  = root.weatherApiKey;
-        if (!apiKey) return;
-        const base    = "https://api.openweathermap.org/data/2.5";
-        const units   = "metric";
-
-        let weatherUrl  = "";
-        let forecastUrl = "";
-        let uviUrl      = "";
-
-        if (root.gpsActive && root.location.valid) {
-            const lat = root.location.lat;
-            const lon = root.location.lon;  // fixed: was .long
-            weatherUrl  = `${base}/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`;
-            forecastUrl = `${base}/forecast?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`;
-            uviUrl      = `${base}/uvi?lat=${lat}&lon=${lon}&appid=${apiKey}`;
-        } else {
-            const q     = formatCityName(root.city);
-            weatherUrl  = `${base}/weather?q=${q}&units=${units}&appid=${apiKey}`;
-            forecastUrl = `${base}/forecast?q=${q}&units=${units}&appid=${apiKey}`;
-        }
-
         let command;
         if (root.gpsActive && root.location.valid) {
-            command = `
-            W=$(curl -sf '${weatherUrl}') &&
-            F=$(curl -sf '${forecastUrl}') &&
-            U=$(curl -sf '${uviUrl}' | jq '.value // 0') &&
-            echo "$W" | jq --argjson uvi "$U" --argjson fc "$F" \
-            '{weather: ., uvi: $uvi, forecast: $fc}'
-            `;
+            const lat = root.location.lat;
+            const lon = root.location.lon;
+            command = `curl -sf "https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&${root._weatherParams}" | jq --arg c "" '. + {city_name: $c}'`;
         } else {
+            const cityOnly = root.city.trim().split(",")[0].trim().split(/\s+/).join("+");
             command = `
-            W=$(curl -sf '${weatherUrl}') &&
-            F=$(curl -sf '${forecastUrl}') &&
-            LAT=$(echo "$W" | jq '.coord.lat') &&
-            LON=$(echo "$W" | jq '.coord.lon') &&
-            U=$(curl -sf '${base}/uvi?lat='"$LAT"'&lon='"$LON"'&appid=${apiKey}' | jq '.value // 0') &&
-            echo "$W" | jq --argjson uvi "$U" --argjson fc "$F" \
-            '{weather: ., uvi: $uvi, forecast: $fc}'
-            `;
+GEO=$(curl -sf 'https://geocoding-api.open-meteo.com/v1/search?name=${cityOnly}&count=1&language=en&format=json')
+LAT=$(echo "$GEO" | jq -r '.results[0].latitude // empty')
+LON=$(echo "$GEO" | jq -r '.results[0].longitude // empty')
+CITY=$(echo "$GEO" | jq -r '.results[0].name // "Unknown"')
+if [ -z "$LAT" ]; then echo '{"error":"geocode failed"}'; exit 1; fi
+curl -sf "https://api.open-meteo.com/v1/forecast?latitude=$LAT&longitude=$LON&${root._weatherParams}" | jq --arg c "$CITY" '. + {city_name: $c}'
+`;
         }
 
-        // Stop any in-flight request before reassigning command
-        if (fetcher.running) fetcher.stop();
-
-        // Full assignment so QML detects the change (index mutation won't notify)
+        if (fetcher.running) fetcher.running = false;
         fetcher.command = ["bash", "-c", command];
-
         root.isLoading = true;
         root.hasError  = false;
         fetcher.running = true;
     }
 
-    function formatCityName(cityName) {
-        return cityName.trim().split(/\s+/).join('+');
-    }
-
     // ── QML objects ───────────────────────────────────────────────────────────
-
-    Process {
-        id: apiKeyReader
-        running: true
-        command: ["bash", "-c", "cat ~/.config/illogical-impulse/weather_api_key 2>/dev/null"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const key = this.text.trim();
-                if (key) root.weatherApiKey = key;
-            }
-        }
-    }
 
     Component.onCompleted: {
         root.ready = true;
@@ -321,11 +295,15 @@ Singleton {
                     return;
                 }
                 try {
-                    const parsedData = JSON.parse(text);
-                    root.refineData(parsedData.weather, parsedData.uvi);
-                    root.refineForecast(parsedData.forecast);
-                    // alerts: parsedData.alerts would be populated here if using One Call 3.0
-                    // root.alerts = parsedData.alerts ?? [];
+                    const parsed = JSON.parse(text);
+                    if (parsed.error) {
+                        root.hasError     = true;
+                        root.errorMessage = parsed.error;
+                        console.error(`[WeatherService] ${parsed.error}`);
+                        return;
+                    }
+                    root.refineData(parsed);
+                    root.refineForecast(parsed);
                 } catch (e) {
                     root.hasError     = true;
                     root.errorMessage = e.message;
@@ -342,11 +320,11 @@ Singleton {
         onPositionChanged: {
             if (position.latitudeValid && position.longitudeValid) {
                 root.location.lat   = position.coordinate.latitude;
-                root.location.lon   = position.coordinate.longitude;  // fixed: was .long
+                root.location.lon   = position.coordinate.longitude;
                 root.location.valid = true;
                 root.getData();
             } else {
-                root.gpsActive = root.location.valid;  // simplified ternary
+                root.gpsActive = root.location.valid;
                 console.error("[WeatherService] Failed to get the GPS location.");
             }
         }
@@ -356,10 +334,9 @@ Singleton {
                 positionSource.stop();
                 root.location.valid = false;
                 root.gpsActive = false;
-                // Kick off a city-based fetch now that GPS has been disabled
                 root.getData();
                 Quickshell.execDetached(["notify-send", Translation.tr("Weather Service"), Translation.tr("Cannot find a GPS service. Using the fallback method instead."), "-a", "Shell"]);
-                console.error("[WeatherService] Could not acquire a valid backend plugin.");  // fixed: aquire → acquire
+                console.error("[WeatherService] Could not acquire a valid backend plugin.");
             }
         }
     }

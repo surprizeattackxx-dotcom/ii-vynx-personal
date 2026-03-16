@@ -178,9 +178,14 @@ Item {
 
 ### 🪟 Desktop
 - Control Hyprland — *"move this window to workspace 3"*
-- Launch an app — *"open dolphin"*
+- Launch an app — *"open dolphin on workspace 2"*
 - Open a file or URL — *"open ~/Documents/notes.txt"*
 - Dark/light mode — *"switch to dark mode"*
+
+### 🖱️ UI Interaction
+- Click any element on screen — *"click the play button"* (screenshot → click_at)
+- Type into any focused field — *"type hello into the search bar"*
+- Press keys and combos — *"press ctrl+s"*, *"press Return"*
 
 ### 📷 Vision
 - Analyze your screen — *"what's on my screen?"* (uses \`take_screenshot\`)
@@ -220,8 +225,9 @@ Item {
 ### 🤖 Agentic Tasks
 - Multi-step tasks with plan approval — *"open spotify and play my recommended music"*
 - Or use \`/task\` for explicit agent mode — */task set up a pomodoro timer session*
-- Wait for apps to start before interacting with them
-- Chain any combination of tools automatically
+- Wait for apps to start before interacting — *"open YouTube and play the latest video"*
+- Click through UIs, type text, press keys automatically
+- Chain any combination of tools in sequence
 
 ### 💬 Context always available
 - Active window, open windows, clipboard, current media, date/time, distro
@@ -320,6 +326,21 @@ Item {
             } else {
                 console.error("[AiChat] Failed to decode image in clipboard content");
             }
+        }
+    }
+
+    // ── Sidebar hide/restore for screen automation (take_screenshot, click_at, etc.) ──
+    Connections {
+        target: Ai
+        function onRequestHideSidebars() {
+            Ai._inputLeftWasOpen  = GlobalStates.sidebarLeftOpen  ?? false;
+            Ai._inputRightWasOpen = GlobalStates.sidebarRightOpen ?? false;
+            GlobalStates.sidebarLeftOpen  = false;
+            GlobalStates.sidebarRightOpen = false;
+        }
+        function onRequestRestoreSidebars() {
+            if (Ai._inputLeftWasOpen)  GlobalStates.sidebarLeftOpen  = true;
+            if (Ai._inputRightWasOpen) GlobalStates.sidebarRightOpen = true;
         }
     }
 
@@ -500,8 +521,12 @@ Item {
                 z: 0
                 anchors.fill: parent
                 spacing: 10
+                boundsBehavior: Flickable.StopAtBounds
                 popin: false
                 topMargin: statusBg.implicitHeight + statusBg.anchors.topMargin * 2
+                // Disable scroll animation while AI is streaming — prevents jitter from
+                // the NumberAnimation fighting rapid contentHeight changes token-by-token.
+                suppressScrollAnimation: Ai.isGenerating
 
                 touchpadScrollFactor: Config.options.interactions.scrolling.touchpadScrollFactor * 1.4
                 mouseScrollFactor: Config.options.interactions.scrolling.mouseScrollFactor * 1.4
@@ -517,33 +542,41 @@ Item {
                     if (atYEnd) _autoScroll = true;
                 }
                 onDragStarted: {
-                    // Only a real user drag disengages auto-scroll.
-                    // onFlickStarted must NOT be used — positionViewAtEnd()
-                    // moves the view fast enough to trigger it, which kills
-                    // auto-scroll on every streaming token.
                     _autoScroll = false;
+                }
+                onContentYChanged: {
+                    // If _scrollPending or _countChanging, this contentY change is
+                    // programmatic — don't treat it as user intent to leave auto-scroll.
+                    if (_autoScroll && !_scrollPending && !_countChanging && !atYEnd) {
+                        _autoScroll = false;
+                    }
                 }
 
                 property bool _scrollPending: false
-
-                Behavior on contentY {
-                    SmoothedAnimation {
-                        duration: 200
-                        easing.type: Easing.OutQuad
-                    }
-                }
+                property bool _countChanging: false
 
                 function _scheduleScrollToEnd() {
                     if (!_autoScroll || _scrollPending || atYEnd) return;
                     _scrollPending = true;
                     Qt.callLater(() => {
-                        if (!atYEnd) contentY = contentHeight - height;
+                        if (_autoScroll && !atYEnd) {
+                            contentY = contentHeight - height;
+                        }
                         _scrollPending = false;
                     });
                 }
 
                 onContentHeightChanged: _scheduleScrollToEnd()
-                onCountChanged: _scheduleScrollToEnd()
+                onCountChanged: {
+                    // Use _countChanging (not _scrollPending) so the ListView's brief
+                    // internal contentY reset on count change doesn't flip _autoScroll off,
+                    // while leaving _scheduleScrollToEnd free to run immediately.
+                    _countChanging = true;
+                    Qt.callLater(() => {
+                        _countChanging = false;
+                        _scheduleScrollToEnd();
+                    });
+                }
 
 
                 add: null // Prevent function calls from being janky
@@ -634,17 +667,21 @@ Item {
                                 displayName: "Mistral",
                                 symbol: "mistral-symbolic",
                                 value: "mistral"
-                            }
+                            },
+                            "anthropic": {
+                                displayName: "Claude",
+                                symbol: "ai-openai-symbolic",
+                                value: "anthropic"
+                            },
                         })
-
-                        readonly property list<string> showProviders: Config.options.sidebar.ai.showProviders
 
                         options: {
                             var result = [];
-                            for (var i = 0; i < showProviders.length; i++) {
-                                var providerKey = showProviders[i];
-                                if (allProviderOptions[providerKey]) {
-                                    result.push(allProviderOptions[providerKey]);
+                            var keys = Object.keys(Ai.modelsOfProviders);
+                            for (var i = 0; i < keys.length; i++) {
+                                var key = keys[i];
+                                if (allProviderOptions[key]) {
+                                    result.push(allProviderOptions[key]);
                                 }
                             }
                             return result;
@@ -851,12 +888,13 @@ Item {
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}provider`)) {
                             root.suggestionQuery = messageInputField.text.split(" ")[1] ?? "";
 
-                            const providers = ["google", "openrouter", "mistral", "ollama"];
+                            const providers = ["google", "openrouter", "mistral", "ollama", "anthropic"];
                             const providerDescriptions = {
-                                "google": {displayName: "Google", description: "Google's LLM"},
-                                "openrouter": {displayName: "OpenRouter", description: "OpenRouter's LLM"},
-                                "mistral": {displayName: "Mistral", description: "Mistral's LLM"},
-                                "ollama": {displayName: "Ollama", description: "Local Ollama models"}
+                                "google":     {displayName: "Google",     description: "Google's Gemini models"},
+                                "openrouter": {displayName: "OpenRouter", description: "OpenRouter (multi-provider)"},
+                                "mistral":    {displayName: "Mistral",    description: "Mistral's models"},
+                                "ollama":     {displayName: "Ollama",     description: "Local Ollama models"},
+                                "anthropic":  {displayName: "Claude",     description: "Anthropic's Claude models"}
                             };
 
                             const providerResults = Fuzzy.go(root.suggestionQuery, providers.map(p => ({

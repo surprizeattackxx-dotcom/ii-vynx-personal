@@ -17,6 +17,8 @@ ListView {
     property bool animateMovement: false
     // Accumulated scroll destination so wheel deltas stack while animating
     property real scrollTargetY: 0
+    // Set true to bypass the contentY animation (e.g. programmatic auto-scroll during streaming)
+    property bool suppressScrollAnimation: false
 
     property real touchpadScrollFactor: Config?.options.interactions.scrolling.touchpadScrollFactor ?? 100
     property real mouseScrollFactor: Config?.options.interactions.scrolling.mouseScrollFactor ?? 50
@@ -52,6 +54,7 @@ ListView {
     }
 
     Behavior on contentY {
+        enabled: !root.suppressScrollAnimation
         NumberAnimation {
             id: scrollAnim
             alwaysRunToEnd: true
