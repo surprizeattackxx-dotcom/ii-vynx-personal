@@ -2626,21 +2626,32 @@ print(f'Removed {deleted} matching memories for: {sys.argv[1]}')
             // Capture all monitors, downscale to 1920px wide, output metadata
             const cmd = `
 DEST="${dest}"
-grim "$DEST" 2>&1 || exit 1
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
-MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys
+mons=json.loads(os.environ.get("MONITORS","[]"))
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
-import os
+import os, json
 dest = os.environ['DEST']
 cx   = int(os.environ.get('CX', 0))
 cy   = int(os.environ.get('CY', 0))
 img  = Image.open(dest).convert('RGBA')
 W, H = img.size
-cols = 8
-rows = max(4, round(cols * H / W))
+cols = 12
+rows = max(5, round(cols * H / W))
 cell_w = W // cols
 cell_h = H // rows
 overlay = Image.new('RGBA', (W, H), (0,0,0,0))
@@ -2650,7 +2661,7 @@ for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
-    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
     except: pass
 if font is None: font = ImageFont.load_default()
 for row in range(rows):
@@ -2662,23 +2673,27 @@ for row in range(rows):
         draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
         t = str(n)
         bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
-        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
         draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
-r = 18
-draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
-draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
-draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
-import json
 monitors = json.loads(os.environ.get('MONITORS','[]'))
-min_x = min((m.get('x',0) for m in monitors), default=0)
-min_y = min((m.get('y',0) for m in monitors), default=0)
-for mon in monitors:
-    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
-    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
-    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
 Image.alpha_composite(img, overlay).convert('RGB').save(dest)
 print(f"GRID_META:{W}:{H}:{cols}:{rows}")
-print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
@@ -2876,21 +2891,32 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
                 screenshotProc.targetPath = dest;
                 const cmd = `
 DEST="${dest}"
-grim "$DEST" 2>&1 || exit 1
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
-MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys
+mons=json.loads(os.environ.get("MONITORS","[]"))
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
-import os
+import os, json
 dest = os.environ['DEST']
 cx   = int(os.environ.get('CX', 0))
 cy   = int(os.environ.get('CY', 0))
 img  = Image.open(dest).convert('RGBA')
 W, H = img.size
-cols = 8
-rows = max(4, round(cols * H / W))
+cols = 12
+rows = max(5, round(cols * H / W))
 cell_w = W // cols
 cell_h = H // rows
 overlay = Image.new('RGBA', (W, H), (0,0,0,0))
@@ -2900,7 +2926,7 @@ for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
-    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
     except: pass
 if font is None: font = ImageFont.load_default()
 for row in range(rows):
@@ -2912,23 +2938,27 @@ for row in range(rows):
         draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
         t = str(n)
         bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
-        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
         draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
-r = 18
-draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
-draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
-draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
-import json
 monitors = json.loads(os.environ.get('MONITORS','[]'))
-min_x = min((m.get('x',0) for m in monitors), default=0)
-min_y = min((m.get('y',0) for m in monitors), default=0)
-for mon in monitors:
-    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
-    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
-    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
 Image.alpha_composite(img, overlay).convert('RGB').save(dest)
 print(f"GRID_META:{W}:{H}:{cols}:{rows}")
-print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
@@ -2977,21 +3007,32 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
                 screenshotProc.targetPath = dest;
                 const cmd = `
 DEST="${dest}"
-grim "$DEST" 2>&1 || exit 1
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
-MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys
+mons=json.loads(os.environ.get("MONITORS","[]"))
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
-import os
+import os, json
 dest = os.environ['DEST']
 cx   = int(os.environ.get('CX', 0))
 cy   = int(os.environ.get('CY', 0))
 img  = Image.open(dest).convert('RGBA')
 W, H = img.size
-cols = 8
-rows = max(4, round(cols * H / W))
+cols = 12
+rows = max(5, round(cols * H / W))
 cell_w = W // cols
 cell_h = H // rows
 overlay = Image.new('RGBA', (W, H), (0,0,0,0))
@@ -3001,7 +3042,7 @@ for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
           '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
-    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
     except: pass
 if font is None: font = ImageFont.load_default()
 for row in range(rows):
@@ -3013,23 +3054,27 @@ for row in range(rows):
         draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
         t = str(n)
         bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
-        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
         draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
-r = 18
-draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
-draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
-draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
-import json
 monitors = json.loads(os.environ.get('MONITORS','[]'))
-min_x = min((m.get('x',0) for m in monitors), default=0)
-min_y = min((m.get('y',0) for m in monitors), default=0)
-for mon in monitors:
-    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
-    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
-    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
 Image.alpha_composite(img, overlay).convert('RGB').save(dest)
 print(f"GRID_META:{W}:{H}:{cols}:{rows}")
-print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
@@ -3299,28 +3344,39 @@ wtype -k return
 mkdir -p /tmp/quickshell/ai
 sleep 2
 DEST="${dest}"
-grim "$DEST" 2>&1 || exit 1
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
-MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys
+mons=json.loads(os.environ.get("MONITORS","[]"))
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
-import os
+import os, json
 dest = os.environ['DEST']
 cx   = int(os.environ.get('CX', 0))
 cy   = int(os.environ.get('CY', 0))
 img  = Image.open(dest).convert('RGBA')
 W, H = img.size
-cols = 8
-rows = max(4, round(cols * H / W))
+cols = 12
+rows = max(5, round(cols * H / W))
 cell_w = W // cols
 cell_h = H // rows
 overlay = Image.new('RGBA', (W, H), (0,0,0,0))
 draw = ImageDraw.Draw(overlay)
 font = None
 for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/TTF/LiberationSans-Bold.ttf']:
-    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
     except: pass
 if font is None: font = ImageFont.load_default()
 for row in range(rows):
@@ -3332,23 +3388,27 @@ for row in range(rows):
         draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
         t = str(n)
         bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
-        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
         draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
-r = 18
-draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
-draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
-draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
-import json
 monitors = json.loads(os.environ.get('MONITORS','[]'))
-min_x = min((m.get('x',0) for m in monitors), default=0)
-min_y = min((m.get('y',0) for m in monitors), default=0)
-for mon in monitors:
-    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
-    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
-    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
 Image.alpha_composite(img, overlay).convert('RGB').save(dest)
 print(f"GRID_META:{W}:{H}:{cols}:{rows}")
-print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
@@ -3580,28 +3640,39 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             const dest = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/screenshot.png`);
             const cmd = `
 DEST="${dest}"
-grim "$DEST" 2>&1 || exit 1
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
-MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys
+mons=json.loads(os.environ.get("MONITORS","[]"))
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
-import os
+import os, json
 dest = os.environ['DEST']
 cx   = int(os.environ.get('CX', 0))
 cy   = int(os.environ.get('CY', 0))
 img  = Image.open(dest).convert('RGBA')
 W, H = img.size
-cols = 8
-rows = max(4, round(cols * H / W))
+cols = 12
+rows = max(5, round(cols * H / W))
 cell_w = W // cols
 cell_h = H // rows
 overlay = Image.new('RGBA', (W, H), (0,0,0,0))
 draw = ImageDraw.Draw(overlay)
 font = None
 for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/TTF/LiberationSans-Bold.ttf']:
-    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
     except: pass
 if font is None: font = ImageFont.load_default()
 for row in range(rows):
@@ -3613,23 +3684,27 @@ for row in range(rows):
         draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
         t = str(n)
         bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
-        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
         draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
-r = 18
-draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
-draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
-draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
-import json
 monitors = json.loads(os.environ.get('MONITORS','[]'))
-min_x = min((m.get('x',0) for m in monitors), default=0)
-min_y = min((m.get('y',0) for m in monitors), default=0)
-for mon in monitors:
-    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
-    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
-    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
 Image.alpha_composite(img, overlay).convert('RGB').save(dest)
 print(f"GRID_META:{W}:{H}:{cols}:{rows}")
-print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
