@@ -324,7 +324,7 @@ Singleton {
                         "properties": {
                             "path": {
                                 "type": "string",
-                                "description": "File path or URL to open"
+                                "description": "File path or URI to open. IMPORTANT: this parameter is always named 'path', not 'url'. For Steam games use 'steam://rungameid/APPID'"
                             }
                         },
                         "required": ["path"]
@@ -823,7 +823,7 @@ Singleton {
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "path": { "type": "string", "description": "File path or URL to open. For Steam games: 'steam://rungameid/APPID'" }
+                                "path": { "type": "string", "description": "File path or URI to open. IMPORTANT: this parameter is always named 'path', not 'url'. For Steam games use 'steam://rungameid/APPID'" }
                             },
                             "required": ["path"]
                         }
@@ -1364,7 +1364,7 @@ Singleton {
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "path": { "type": "string", "description": "File path or URL to open. For Steam games: 'steam://rungameid/APPID'" }
+                                "path": { "type": "string", "description": "File path or URI to open. IMPORTANT: this parameter is always named 'path', not 'url'. For Steam games use 'steam://rungameid/APPID'" }
                             },
                             "required": ["path"]
                         }
@@ -2733,7 +2733,7 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             commandExecutionProc.shellCommand = `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1; sleep 2; pgrep -xi "${appBin}" > /dev/null && echo "Started: ${app}" || echo "Launch command sent but process '${appBin}' not detected. If this is a Steam game, use open_file with its steam://rungameid/APPID URI instead."`;
             commandExecutionProc.running = true;
         } else if (name === "open_file") {
-            const path = args.path || "";
+            const path = args.path || args.url || args.uri || "";
             if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); requester.makeRequest(); return; }
             Quickshell.execDetached(["xdg-open", path]);
             addFunctionOutputMessage(name, `Opened: ${path}`);
