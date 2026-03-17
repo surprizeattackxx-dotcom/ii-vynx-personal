@@ -25,7 +25,7 @@ ApiStrategy {
             "tools": tools,
             "tool_choice": (tools && tools.length > 0) ? "auto" : "none",
             "temperature": temperature,
-            "max_tokens": 1024,
+            "max_tokens": 8192,
         };
         return model.extraParams ? Object.assign({}, baseData, model.extraParams) : baseData;
     }
@@ -39,8 +39,6 @@ ApiStrategy {
         if (cleanData.startsWith("data:")) {
             cleanData = cleanData.slice(5).trim();
         }
-
-        if (cleanData.includes("tool") || cleanData.includes("finish")) console.log("[AI] OpenAI chunk:", cleanData.substring(0, 500));
 
         if (!cleanData || cleanData.startsWith(":")) return {};
         if (cleanData === "[DONE]") {
@@ -84,17 +82,15 @@ ApiStrategy {
             message.rawContent += newContent;
 
             // Tool call handling (accumulate across streaming chunks)
+            // NOTE: always reassign the whole object (not just mutate properties)
+            // because QML property var may return a copy on read, causing mutations to be lost.
             const toolCallDelta = dataJson.choices?.[0]?.delta?.tool_calls?.[0];
             if (toolCallDelta) {
-                if (!pendingToolCall) {
-                    pendingToolCall = { name: "", arguments: "" };
-                }
-                if (toolCallDelta.function?.name && !pendingToolCall.name) {
-                    pendingToolCall.name = toolCallDelta.function.name;
-                }
-                if (toolCallDelta.function?.arguments) {
-                    pendingToolCall.arguments += toolCallDelta.function.arguments;
-                }
+                const cur = pendingToolCall || { name: "", arguments: "" };
+                pendingToolCall = {
+                    name: (cur.name || toolCallDelta.function?.name || ""),
+                    arguments: cur.arguments + (toolCallDelta.function?.arguments || ""),
+                };
             }
 
             const finishReason = dataJson.choices?.[0]?.finish_reason;
@@ -112,8 +108,9 @@ ApiStrategy {
                 }
                 if (pendingToolCall?.name) {
                     let parsedArgs = {};
-                    try { parsedArgs = JSON.parse(pendingToolCall.arguments); } catch(e) {}
-                    console.log("[AI] Tool call fired:", pendingToolCall.name, "args:", pendingToolCall.arguments, "parsed:", JSON.stringify(parsedArgs));
+                    try { parsedArgs = JSON.parse(pendingToolCall.arguments); } catch(e) {
+                        console.log("[AI] Failed to parse tool args:", e, "raw:", pendingToolCall.arguments);
+                    }
                     const call = { name: pendingToolCall.name, args: parsedArgs };
                     pendingToolCall = null;
                     return { functionCall: call };

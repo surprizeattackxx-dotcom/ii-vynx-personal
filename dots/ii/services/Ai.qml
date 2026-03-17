@@ -27,6 +27,18 @@ Singleton {
     readonly property string apiKeyEnvVarName: "API_KEY"
 
     signal responseFinished()
+    signal requestHideSidebars()
+    signal requestRestoreSidebars()
+    property bool _inputLeftWasOpen: false
+    property bool _inputRightWasOpen: false
+
+    Timer {
+        id: sidebarHideTimer
+        interval: 380
+        repeat: false
+        property var pendingAction: null
+        onTriggered: { if (pendingAction) { pendingAction(); pendingAction = null; } }
+    }
 
     property string systemPrompt: {
         let prompt = Config.options?.ai?.systemPrompt ?? "";
@@ -141,7 +153,7 @@ Singleton {
                 },
                 {
                     "name": "run_shell_command",
-                    "description": "Execute a bash command and return its output. IMPORTANT: This requires user approval before execution. Only use for quick, non-interactive commands (queries, checks, simple operations). For interactive commands, long-running processes, or dangerous operations, ask the user to run them manually instead. The command will be shown to the user for approval.",
+                    "description": "Execute a bash command and return its output. NOT for math — use calculate. NOT for media — use control_media. NOT for system volume/brightness — use control_system. For interactive or dangerous operations, ask the user to run manually. Requires user approval.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -155,13 +167,13 @@ Singleton {
                 },
                 {
                     "name": "remember",
-                    "description": "Save a piece of information to persistent memory across sessions. Use when the user asks you to remember something, or when you learn an important preference or fact about them.",
+                    "description": "Store a quick single-line pattern or preference. For organised multi-topic knowledge base use memory_file instead. Store PATTERNS not facts — e.g. 'To launch Arc Raiders: open_file(steam://rungameid/1808500)', 'User prefers dark themes'. Write in third person.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "content": {
                                 "type": "string",
-                                "description": "The information to remember, written in third person (e.g., 'User prefers dark mode')"
+                                "description": "Pattern or preference to store, written in third person as an actionable insight (e.g. 'User prefers volume at 40%')"
                             }
                         },
                         "required": ["content"]
@@ -169,7 +181,7 @@ Singleton {
                 },
                 {
                     "name": "create_todo",
-                    "description": "Add a new task to the user's to-do list. Use when the user asks to be reminded of something or wants to track a task. Don't ask for permission, run directly.",
+                    "description": "Add a task to the user's to-do list for manual tracking. NOT for timed reminders — use set_timer. NOT for recurring tasks — use schedule_task. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -200,7 +212,7 @@ Singleton {
                 },
                 {
                     "name": "control_media",
-                    "description": "Control media playback via MPRIS/playerctl. Use for play, pause, skip, or get what's currently playing. Runs automatically without approval.",
+                    "description": "Control currently playing media: play, pause, skip, previous, or get status. ONLY use this for controlling what is already playing. Do NOT use this to search for specific artists, albums, or songs — instead use launch_app + take_screenshot + click_cell to open the app and navigate to the content visually.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -214,7 +226,7 @@ Singleton {
                 },
                 {
                     "name": "control_hyprland",
-                    "description": "Control Hyprland window manager. Switch workspaces, focus windows, move windows, etc. Runs automatically without approval.",
+                    "description": "Control Hyprland: switch workspaces, focus or move windows. NOT for launching apps — use launch_app. NOT for killing processes — use kill_process. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -287,18 +299,18 @@ Singleton {
                 },
                 {
                     "name": "take_screenshot",
-                    "description": "Take a screenshot of the current screen and attach it to the conversation for analysis. Runs automatically.",
+                    "description": "Take a screenshot of all monitors and attach it for analysis. After receiving it, always visually analyze the full image — identify visible apps, UI elements, text, the cursor position (red crosshair), and which monitor the content is on. Never skip analyzing the image.",
                     "parameters": {}
                 },
                 {
                     "name": "launch_app",
-                    "description": "Launch an application. Runs automatically without approval.",
+                    "description": "Launch an application by command name. IMPORTANT: Steam games cannot be launched by title — use open_file with their steam://rungameid/APPID URI instead. Always follow with wait_for_app to verify the process actually started. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "app": {
                                 "type": "string",
-                                "description": "Application command or name to launch (e.g. 'firefox', 'dolphin', 'spotify')"
+                                "description": "Application command to launch (e.g. 'firefox', 'dolphin', 'spotify'). NOT for Steam games — use open_file('steam://rungameid/ID') for those."
                             }
                         },
                         "required": ["app"]
@@ -306,7 +318,7 @@ Singleton {
                 },
                 {
                     "name": "open_file",
-                    "description": "Open a file or URL with the default application via xdg-open. Runs automatically without approval.",
+                    "description": "Open a file path or URI with xdg-open. Use for Steam games ('steam://rungameid/APPID'), documents, and URLs. NOT for launching apps by name — use launch_app for that. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -320,7 +332,7 @@ Singleton {
                 },
                 {
                     "name": "notify",
-                    "description": "Send a desktop notification popup. Use to alert the user after completing a task. Runs automatically.",
+                    "description": "Send a desktop notification popup to alert the user. Use after completing a task or for important status updates. NOT for audio output — use speak for that. NOT for mid-task status (just act). Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -332,7 +344,7 @@ Singleton {
                 },
                 {
                     "name": "set_timer",
-                    "description": "Set a countdown timer that fires a desktop notification when it expires. Runs automatically.",
+                    "description": "Set a one-time countdown timer (e.g. '25 minutes'). NOT for recurring tasks — use schedule_task. NOT for task tracking — use create_todo. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -344,7 +356,7 @@ Singleton {
                 },
                 {
                     "name": "calculate",
-                    "description": "Evaluate a math expression and return the result. Supports Python math syntax. Runs automatically.",
+                    "description": "Evaluate a math expression using Python (e.g. '2**32', 'math.sqrt(144)'). Use this instead of run_shell_command for any pure math. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -360,29 +372,56 @@ Singleton {
                 },
                 {
                     "name": "manage_notes",
-                    "description": "Read or write persistent notes. Use to save information the user wants to keep, or read back saved notes.",
+                    "description": "Read or write user-visible notes in SQLite. Use for notes the USER explicitly wants to keep. For AI-internal patterns and preferences, use 'remember' instead. For tracking progress in a long task, use 'add' to log each completed step.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
-                            "content": { "type": "string", "description": "Note content for 'add' action" }
+                            "content": { "type": "string", "description": "Note content for 'add' action" },
+                            "tags": { "type": "string", "description": "Optional comma-separated tags for 'add' action" }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "search_memory",
+                    "description": "Semantically search stored patterns and preferences using vector similarity. Call this at the START of any desktop task, app launch, or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "What to search for" },
+                            "limit": { "type": "integer", "description": "Max results to return (default 5)" }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "schedule_task",
+                    "description": "Schedule a recurring AI task using cron syntax. Use for periodic reminders or automated checks. NOT for one-time countdowns — use set_timer. NOT for simple to-do items — use create_todo.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'add', 'list', 'delete'" },
+                            "cron": { "type": "string", "description": "Cron expression for 'add': '0 9 * * *' = 9am daily, '*/30 * * * *' = every 30min" },
+                            "prompt": { "type": "string", "description": "Message to send to AI when task fires" },
+                            "id": { "type": "integer", "description": "Task ID for 'delete' action" }
                         },
                         "required": ["action"]
                     }
                 },
                 {
                     "name": "capture_region",
-                    "description": "Open an interactive region selector so the user can draw a box around part of their screen. Captures that region as an image and attaches it for visual analysis. Use when the user wants to analyze, read, or describe a specific part of their screen.",
+                    "description": "Let the USER interactively select a screen region to capture and analyze. Use when the user wants to pick a specific area themselves. NOT for AI-initiated screenshots — use take_screenshot for those. Runs automatically.",
                     "parameters": {}
                 },
                 {
                     "name": "ocr_region",
-                    "description": "Open an interactive region selector, capture that area of the screen, and extract text from it using OCR. Returns the text found. Use when the user wants to copy or read text from an image or part of the screen.",
+                    "description": "Let the user select a screen region and extract its text via OCR. Use when you need the raw text content of a specific area. NOT for general visual analysis — use capture_region. NOT for reading text from a full screenshot — the AI can read take_screenshot images directly.",
                     "parameters": {}
                 },
                 {
                     "name": "speak",
-                    "description": "Read text aloud using text-to-speech. Use when the user asks you to read something out loud or narrate a response.",
+                    "description": "Read text aloud using text-to-speech. Use when the user asks you to read something out loud. NOT for silent notifications — use notify for those. Runs automatically.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -410,8 +449,20 @@ Singleton {
                     }
                 },
                 {
+                    "name": "click_cell",
+                    "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
+                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                        },
+                        "required": ["cell"]
+                    }
+                },
+                {
                     "name": "show_plan",
-                    "description": "Before executing any multi-step task (2+ actions, app launching, system changes), present a numbered plan to the user and wait for their approval. After approval, execute each step in order using the appropriate tools. Always use this for complex or chained tasks.",
+                    "description": "REQUIRED before any desktop task. Call this FIRST before launch_app, click_at, click_cell, type_text, or any action sequence. Present a numbered plan and wait for approval. Never start executing desktop actions without a plan.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -457,6 +508,28 @@ Singleton {
                     }
                 },
                 {
+                    "name": "read_url",
+                    "description": "Fetch a URL and return its interactive elements (inputs, buttons, links) with their IDs, names, and labels. Use this BEFORE taking a screenshot when you need to interact with a web page — knowing element IDs lets you use execute_js to click/focus elements precisely without visual guessing.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": { "type": "string", "description": "The URL to fetch and parse" }
+                        },
+                        "required": ["url"]
+                    }
+                },
+                {
+                    "name": "execute_js",
+                    "description": "Execute JavaScript in the currently active browser tab by injecting it through the address bar. Use element IDs from read_url to interact precisely: e.g. document.getElementById('search').click() or document.querySelector('#input').value='text'. No screenshot needed.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "code": { "type": "string", "description": "JavaScript code to execute in the browser, e.g. document.getElementById('searchInput').focus()" }
+                        },
+                        "required": ["code"]
+                    }
+                },
+                {
                     "name": "type_text",
                     "description": "Type text into the currently focused field or application using the keyboard. Use after clicking a text field with click_at. Runs automatically.",
                     "parameters": {
@@ -476,6 +549,51 @@ Singleton {
                             "key": { "type": "string", "description": "Key or combination to press, e.g. 'Return', 'ctrl+a', 'Escape'" }
                         },
                         "required": ["key"]
+                    }
+                },
+                {
+                    "name": "scroll",
+                    "description": "Scroll the mouse wheel at the current cursor position. Use after click_at to position the cursor over a scrollable area, then scroll to navigate. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "direction": { "type": "string", "description": "Direction: 'up', 'down', 'left', or 'right'" },
+                            "amount": { "type": "integer", "description": "Scroll steps (default 3, max 20). Use 3-5 for normal scrolling, 10+ for large jumps." }
+                        },
+                        "required": ["direction"]
+                    }
+                },
+                {
+                    "name": "read_clipboard_text",
+                    "description": "Read text currently in the clipboard. Use to retrieve content the user has copied, or to read text staged by write_clipboard. Runs automatically.",
+                    "parameters": {}
+                },
+                {
+                    "name": "write_clipboard",
+                    "description": "Write text to the clipboard so the user can paste it, or so you can paste it with ctrl+v. Runs automatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "Text to copy to the clipboard" }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "memory_file",
+                    "description": "Manage your personal knowledge base — create, read, and update structured markdown files under /memories/. Build organised topic files like /memories/steam_games.md or /memories/user_preferences.md. More powerful than 'remember' — supports full file management with selective in-place edits. Always view /memories/ first to see what exists before creating files.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": { "type": "string", "description": "Operation: 'view' (read file or list directory), 'create' (write new file), 'str_replace' (replace text in existing file), 'insert' (insert line), 'delete' (remove file)" },
+                            "path": { "type": "string", "description": "Path starting with /memories/ — e.g. '/memories/' to list, '/memories/steam_games.md' for a file" },
+                            "file_text": { "type": "string", "description": "Full file content for 'create'" },
+                            "old_str": { "type": "string", "description": "Exact text to replace for 'str_replace'" },
+                            "new_str": { "type": "string", "description": "Replacement text for 'str_replace'" },
+                            "insert_line": { "type": "integer", "description": "Line number to insert at for 'insert' (0 = beginning)" },
+                            "insert_text": { "type": "string", "description": "Text to insert for 'insert'" }
+                        },
+                        "required": ["command", "path"]
                     }
                 },
             ]}],
@@ -536,7 +654,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "web_search",
-                        "description": "Search the web for current information, news, or facts beyond your knowledge cutoff. Use this whenever the user asks about recent events or anything that may have changed.",
+                        "description": "Search the web for current information or facts beyond your knowledge cutoff. Use for general web searches. NOT for searching within a specific app (Spotify, YouTube, etc.) — use search_app for those.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -553,11 +671,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "remember",
-                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "description": "Store a quick single-line pattern or preference. For organised multi-topic knowledge base use memory_file instead. Store PATTERNS not facts — e.g. 'To launch Arc Raiders: open_file(steam://rungameid/1808500)', 'User prefers dark themes'. Write in third person.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "content": { "type": "string", "description": "Information to remember in third person" }
+                                "content": { "type": "string", "description": "Pattern or preference to store in third person (e.g. 'User prefers volume at 40%', 'To open X use Y')" }
                             },
                             "required": ["content"]
                         }
@@ -567,7 +685,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "create_todo",
-                        "description": "Add a task to the user's to-do list.",
+                        "description": "Add a task to the user's to-do list for manual tracking. NOT for timed reminders — use set_timer. NOT for recurring tasks — use schedule_task. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -609,7 +727,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "control_hyprland",
-                        "description": "Control Hyprland window manager via hyprctl dispatch. Runs automatically without approval.",
+                        "description": "Control Hyprland: switch workspaces, focus or move windows. NOT for launching apps — use launch_app. NOT for killing processes — use kill_process. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -679,7 +797,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "take_screenshot",
-                        "description": "Take a screenshot and attach it to the conversation for visual analysis. Runs automatically.",
+                        "description": "Take a screenshot of all monitors and attach it for analysis. After receiving it, always visually analyze the full image — identify visible apps, UI elements, text, the cursor position (red crosshair), and which monitor the content is on. Never skip analyzing the image.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -687,11 +805,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "launch_app",
-                        "description": "Launch an application by command name. Runs automatically.",
+                        "description": "Launch an application by command name. IMPORTANT: Steam games cannot be launched by title — use open_file with their steam://rungameid/APPID URI instead. Always follow with wait_for_app to verify the process actually started. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin')" }
+                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin', 'spotify'). NOT for Steam games — use open_file('steam://rungameid/ID') for those." }
                             },
                             "required": ["app"]
                         }
@@ -701,11 +819,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "open_file",
-                        "description": "Open a file or URL with xdg-open. Runs automatically.",
+                        "description": "Open a file path or URI with xdg-open. Use for Steam games ('steam://rungameid/APPID'), documents, and URLs. NOT for launching apps by name — use launch_app for that. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "path": { "type": "string", "description": "File path or URL to open" }
+                                "path": { "type": "string", "description": "File path or URL to open. For Steam games: 'steam://rungameid/APPID'" }
                             },
                             "required": ["path"]
                         }
@@ -715,7 +833,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "notify",
-                        "description": "Send a desktop notification popup. Runs automatically.",
+                        "description": "Send a desktop notification popup to alert the user. Use after completing a task or for important status updates. NOT for audio output — use speak for that. NOT for mid-task status (just act). Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -730,7 +848,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "set_timer",
-                        "description": "Set a countdown timer that fires a desktop notification. Runs automatically.",
+                        "description": "Set a one-time countdown timer (e.g. '25 minutes'). NOT for recurring tasks — use schedule_task. NOT for task tracking — use create_todo. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -745,7 +863,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "calculate",
-                        "description": "Evaluate a math expression using Python. Runs automatically.",
+                        "description": "Evaluate a math expression using Python (e.g. '2**32', 'math.sqrt(144)'). Use this instead of run_shell_command for any pure math. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -767,12 +885,45 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "manage_notes",
-                        "description": "Read or write persistent notes.",
+                        "description": "Read or write user-visible notes in SQLite. Use for notes the USER explicitly wants to keep. Use 'remember' instead for AI-internal patterns. Use 'add' to log progress steps during long tasks.",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
-                                "content": { "type": "string", "description": "Note content for 'add' action" }
+                                "content": { "type": "string", "description": "Note content for 'add' action" },
+                                "tags": { "type": "string", "description": "Optional comma-separated tags for 'add' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_memory",
+                        "description": "Semantically search stored patterns and preferences. Call this at the START of any desktop task or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "What to search for" },
+                                "limit": { "type": "integer", "description": "Max results (default 5)" }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "schedule_task",
+                        "description": "Schedule a recurring AI task using cron syntax. Use for periodic reminders or automated checks. NOT for one-time countdowns — use set_timer. NOT for simple to-do items — use create_todo.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'add', 'list', 'delete'" },
+                                "cron": { "type": "string", "description": "Cron expression: '0 9 * * *' = 9am daily, '*/30 * * * *' = every 30min" },
+                                "prompt": { "type": "string", "description": "Message to send to AI when task fires" },
+                                "id": { "type": "integer", "description": "Task ID for 'delete'" }
                             },
                             "required": ["action"]
                         }
@@ -782,7 +933,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "capture_region",
-                        "description": "Open an interactive region selector to capture a specific screen area for visual analysis. Runs automatically.",
+                        "description": "Let the USER interactively select a screen region to capture and analyze. Use when the user wants to pick a specific area themselves. NOT for AI-initiated screenshots — use take_screenshot for those. Runs automatically.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -790,7 +941,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "ocr_region",
-                        "description": "Open an interactive region selector, capture that screen area, and extract text via OCR. Returns the text. Runs automatically.",
+                        "description": "Let the user select a screen region and extract its text via OCR. Use when you need the raw text content of a specific area. NOT for general visual analysis — use capture_region. NOT for reading text from a full screenshot — the AI can read take_screenshot images directly.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -798,7 +949,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "speak",
-                        "description": "Read text aloud using text-to-speech. Runs automatically.",
+                        "description": "Read text aloud using text-to-speech. Use when the user asks you to read something out loud. NOT for silent notifications — use notify for those. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -820,7 +971,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "click_at",
-                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot and click. Use the exact pixel values from the screenshot image. After clicking, a fresh screenshot is taken automatically — always check it to verify the UI changed. If the UI did NOT change, do NOT click the same spot again; try a different approach.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -835,8 +986,23 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "click_cell",
+                        "description": "Click the center of a numbered grid cell shown in the screenshot overlay. Find the grid number overlaid on the region you want to click. After clicking, a fresh screenshot is taken automatically — verify the UI changed before proceeding. If it did not change, the element may be in a different cell.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            },
+                            "required": ["cell"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "show_plan",
-                        "description": "Present a numbered multi-step task plan to the user for approval before executing. Use for any task with 2+ steps.",
+                        "description": "REQUIRED before any desktop task. Call this FIRST before launch_app, click_at, click_cell, type_text, or any action sequence. Present a numbered plan and wait for approval. Never start executing desktop actions without a plan.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -866,7 +1032,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "search_app",
-                        "description": "Search within a specific app or service: spotify, youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files. Runs automatically.",
+                        "description": "Search within a specific app or service: spotify, youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files. For spotify, opens the search URI directly. Alternatively use press_key('ctrl+k') to open Spotify's search bar if Spotify is already focused. After calling this, a screenshot is taken automatically — wait for it and use click_cell to select from the results.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -874,6 +1040,34 @@ Singleton {
                                 "query": { "type": "string", "description": "Search query" }
                             },
                             "required": ["app", "query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_url",
+                        "description": "Fetch a web page and return its interactive elements (inputs, buttons, links) with their IDs. Step 1 of 2 for precise web interaction: call read_url to get element IDs, then use execute_js to interact. NOT needed for visual clicking — use take_screenshot + click_at for that.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "url": { "type": "string", "description": "URL to fetch and parse" }
+                            },
+                            "required": ["url"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_js",
+                        "description": "Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. More precise than clicking visually. NOT for visual navigation — use click_at for that. NOT without read_url first unless you know the element IDs.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code": { "type": "string", "description": "JavaScript to run in the browser" }
+                            },
+                            "required": ["code"]
                         }
                     }
                 },
@@ -902,6 +1096,63 @@ Singleton {
                                 "key": { "type": "string", "description": "Key or combo to press" }
                             },
                             "required": ["key"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "scroll",
+                        "description": "Scroll the mouse wheel at the current cursor position. Use after click_at to position the cursor over a scrollable area, then scroll to navigate. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "direction": { "type": "string", "description": "Direction: 'up', 'down', 'left', or 'right'" },
+                                "amount": { "type": "integer", "description": "Scroll steps (default 3, max 20). Use 3-5 for normal scrolling, 10+ for large jumps." }
+                            },
+                            "required": ["direction"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_clipboard_text",
+                        "description": "Read text currently in the clipboard. Use to retrieve content the user has copied, or to read text staged by write_clipboard. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "write_clipboard",
+                        "description": "Write text to the clipboard so the user can paste it, or so you can paste it with ctrl+v. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to copy to the clipboard" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "memory_file",
+                        "description": "Manage your personal knowledge base — create, read, and update structured markdown files under /memories/. Build organised topic files like /memories/steam_games.md or /memories/user_preferences.md. More powerful than 'remember' — supports full file management with selective in-place edits. Always view /memories/ first to see what exists before creating files.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": { "type": "string", "description": "Operation: 'view' (read file or list directory), 'create' (write new file), 'str_replace' (replace text in existing file), 'insert' (insert line), 'delete' (remove file)" },
+                                "path": { "type": "string", "description": "Path starting with /memories/ — e.g. '/memories/' to list, '/memories/steam_games.md' for a file" },
+                                "file_text": { "type": "string", "description": "Full file content for 'create'" },
+                                "old_str": { "type": "string", "description": "Exact text to replace for 'str_replace'" },
+                                "new_str": { "type": "string", "description": "Replacement text for 'str_replace'" },
+                                "insert_line": { "type": "integer", "description": "Line number to insert at for 'insert' (0 = beginning)" },
+                                "insert_text": { "type": "string", "description": "Text to insert for 'insert'" }
+                            },
+                            "required": ["command", "path"]
                         }
                     }
                 },
@@ -961,11 +1212,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "remember",
-                        "description": "Save a piece of information to persistent memory across sessions.",
+                        "description": "Store a quick single-line pattern or preference. For organised multi-topic knowledge base use memory_file instead. Store PATTERNS not facts — e.g. 'To launch Arc Raiders: open_file(steam://rungameid/1808500)', 'User prefers dark themes'. Write in third person.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "content": { "type": "string", "description": "Information to remember in third person" }
+                                "content": { "type": "string", "description": "Pattern or preference to store in third person (e.g. 'User prefers volume at 40%', 'To open X use Y')" }
                             },
                             "required": ["content"]
                         }
@@ -975,7 +1226,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "create_todo",
-                        "description": "Add a task to the user's to-do list.",
+                        "description": "Add a task to the user's to-do list for manual tracking. NOT for timed reminders — use set_timer. NOT for recurring tasks — use schedule_task. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1017,7 +1268,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "control_hyprland",
-                        "description": "Control Hyprland window manager via hyprctl dispatch. Runs automatically without approval.",
+                        "description": "Control Hyprland: switch workspaces, focus or move windows. NOT for launching apps — use launch_app. NOT for killing processes — use kill_process. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1095,11 +1346,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "launch_app",
-                        "description": "Launch an application by command name. Runs automatically.",
+                        "description": "Launch an application by command name. IMPORTANT: Steam games cannot be launched by title — use open_file with their steam://rungameid/APPID URI instead. Always follow with wait_for_app to verify the process actually started. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin')" }
+                                "app": { "type": "string", "description": "App command to launch (e.g. 'firefox', 'dolphin', 'spotify'). NOT for Steam games — use open_file('steam://rungameid/ID') for those." }
                             },
                             "required": ["app"]
                         }
@@ -1109,11 +1360,11 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "open_file",
-                        "description": "Open a file or URL with xdg-open. Runs automatically.",
+                        "description": "Open a file path or URI with xdg-open. Use for Steam games ('steam://rungameid/APPID'), documents, and URLs. NOT for launching apps by name — use launch_app for that. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "path": { "type": "string", "description": "File path or URL to open" }
+                                "path": { "type": "string", "description": "File path or URL to open. For Steam games: 'steam://rungameid/APPID'" }
                             },
                             "required": ["path"]
                         }
@@ -1123,7 +1374,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "notify",
-                        "description": "Send a desktop notification popup. Runs automatically.",
+                        "description": "Send a desktop notification popup to alert the user. Use after completing a task or for important status updates. NOT for audio output — use speak for that. NOT for mid-task status (just act). Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1138,7 +1389,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "set_timer",
-                        "description": "Set a countdown timer that fires a desktop notification. Runs automatically.",
+                        "description": "Set a one-time countdown timer (e.g. '25 minutes'). NOT for recurring tasks — use schedule_task. NOT for task tracking — use create_todo. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1153,7 +1404,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "calculate",
-                        "description": "Evaluate a math expression using Python. Runs automatically.",
+                        "description": "Evaluate a math expression using Python (e.g. '2**32', 'math.sqrt(144)'). Use this instead of run_shell_command for any pure math. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1175,12 +1426,45 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "manage_notes",
-                        "description": "Read or write persistent notes.",
+                        "description": "Read or write user-visible notes in SQLite. Use for notes the USER explicitly wants to keep. Use 'remember' instead for AI-internal patterns. Use 'add' to log progress steps during long tasks.",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "action": { "type": "string", "description": "Action: 'list', 'add', 'clear'" },
-                                "content": { "type": "string", "description": "Note content for 'add' action" }
+                                "content": { "type": "string", "description": "Note content for 'add' action" },
+                                "tags": { "type": "string", "description": "Optional comma-separated tags for 'add' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_memory",
+                        "description": "Semantically search stored patterns and preferences. Call this at the START of any desktop task or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "What to search for" },
+                                "limit": { "type": "integer", "description": "Max results (default 5)" }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "schedule_task",
+                        "description": "Schedule a recurring AI task using cron syntax. Use for periodic reminders or automated checks. NOT for one-time countdowns — use set_timer. NOT for simple to-do items — use create_todo.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'add', 'list', 'delete'" },
+                                "cron": { "type": "string", "description": "Cron expression: '0 9 * * *' = 9am daily, '*/30 * * * *' = every 30min" },
+                                "prompt": { "type": "string", "description": "Message to send to AI when task fires" },
+                                "id": { "type": "integer", "description": "Task ID for 'delete'" }
                             },
                             "required": ["action"]
                         }
@@ -1190,7 +1474,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "capture_region",
-                        "description": "Open an interactive region selector to capture a specific screen area for visual analysis. Runs automatically.",
+                        "description": "Let the USER interactively select a screen region to capture and analyze. Use when the user wants to pick a specific area themselves. NOT for AI-initiated screenshots — use take_screenshot for those. Runs automatically.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -1198,7 +1482,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "ocr_region",
-                        "description": "Open an interactive region selector, capture that screen area, and extract text via OCR. Returns the text. Runs automatically.",
+                        "description": "Let the user select a screen region and extract its text via OCR. Use when you need the raw text content of a specific area. NOT for general visual analysis — use capture_region. NOT for reading text from a full screenshot — the AI can read take_screenshot images directly.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -1206,7 +1490,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "speak",
-                        "description": "Read text aloud using text-to-speech. Runs automatically.",
+                        "description": "Read text aloud using text-to-speech. Use when the user asks you to read something out loud. NOT for silent notifications — use notify for those. Runs automatically.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1237,6 +1521,21 @@ Singleton {
                                 "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
                             },
                             "required": ["x", "y"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "click_cell",
+                        "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            },
+                            "required": ["cell"]
                         }
                     }
                 },
@@ -1288,6 +1587,34 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "read_url",
+                        "description": "Fetch a web page and return its interactive elements (inputs, buttons, links) with their IDs. Step 1 of 2 for precise web interaction: call read_url to get element IDs, then use execute_js to interact. NOT needed for visual clicking — use take_screenshot + click_at for that.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "url": { "type": "string", "description": "URL to fetch and parse" }
+                            },
+                            "required": ["url"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_js",
+                        "description": "Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. More precise than clicking visually. NOT for visual navigation — use click_at for that. NOT without read_url first unless you know the element IDs.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code": { "type": "string", "description": "JavaScript to run in the browser" }
+                            },
+                            "required": ["code"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "type_text",
                         "description": "Type text into the currently focused field using the keyboard. Use after click_at on a text field. Runs automatically.",
                         "parameters": {
@@ -1310,6 +1637,63 @@ Singleton {
                                 "key": { "type": "string", "description": "Key or combo to press" }
                             },
                             "required": ["key"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "scroll",
+                        "description": "Scroll the mouse wheel at the current cursor position. Use after click_at to position the cursor over a scrollable area, then scroll to navigate. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "direction": { "type": "string", "description": "Direction: 'up', 'down', 'left', or 'right'" },
+                                "amount": { "type": "integer", "description": "Scroll steps (default 3, max 20). Use 3-5 for normal scrolling, 10+ for large jumps." }
+                            },
+                            "required": ["direction"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_clipboard_text",
+                        "description": "Read text currently in the clipboard. Use to retrieve content the user has copied, or to read text staged by write_clipboard. Runs automatically.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "write_clipboard",
+                        "description": "Write text to the clipboard so the user can paste it, or so you can paste it with ctrl+v. Runs automatically.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "description": "Text to copy to the clipboard" }
+                            },
+                            "required": ["text"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "memory_file",
+                        "description": "Manage your personal knowledge base — create, read, and update structured markdown files under /memories/. Build organised topic files like /memories/steam_games.md or /memories/user_preferences.md. More powerful than 'remember' — supports full file management with selective in-place edits. Always view /memories/ first to see what exists before creating files.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": { "type": "string", "description": "Operation: 'view' (read file or list directory), 'create' (write new file), 'str_replace' (replace text in existing file), 'insert' (insert line), 'delete' (remove file)" },
+                                "path": { "type": "string", "description": "Path starting with /memories/ — e.g. '/memories/' to list, '/memories/steam_games.md' for a file" },
+                                "file_text": { "type": "string", "description": "Full file content for 'create'" },
+                                "old_str": { "type": "string", "description": "Exact text to replace for 'str_replace'" },
+                                "new_str": { "type": "string", "description": "Replacement text for 'str_replace'" },
+                                "insert_line": { "type": "integer", "description": "Line number to insert at for 'insert' (0 = beginning)" },
+                                "insert_text": { "type": "string", "description": "Text to insert for 'insert'" }
+                            },
+                            "required": ["command", "path"]
                         }
                     }
                 },
@@ -1366,6 +1750,7 @@ Singleton {
                                                 "model": currentModel,
                                                 "requires_key": false,
                                                 "api_format": "openai",
+                                                "extraParams": { "num_ctx": 32768 },
         }),
         "google": aiModelComponent.createObject(this, {
             "name": `Google - ${currentModel}`,
@@ -1471,8 +1856,13 @@ Singleton {
     property int lastScreenshotHeight: 0
     property int lastScreenshotOffsetX: 0
     property int lastScreenshotOffsetY: 0
+    property int lastGridCols: 8
+    property int lastGridRows: 5
+    property string _lastClickInfo: ""
 
     Component.onCompleted: {
+        // Ensure memories directory exists
+        Quickshell.execDetached(["bash", "-c", `mkdir -p "${Directories.aiMemoryPath.replace("memory.md", "memories")}"`]);
         setModel(currentModelId, false, false); // Do necessary setup for model
         if (Config.options.ai.extraModels.length > 0) {
             modelsOfProviders = mergeModelsFromList(baseModels, Config.options.ai.extraModels)
@@ -1514,11 +1904,14 @@ Singleton {
                 try {
                     if (text.length === 0) return;
                     const dataJson = JSON.parse(text.trim());
+                    const EMBED_MODELS = ["nomic-embed", "mxbai-embed", "all-minilm", "snowflake-arctic-embed", "bge-m3", "bge-large"];
                     root.modelsOfProviders = Object.assign({}, root.modelsOfProviders, {
-                        "ollama": dataJson.map(model => ({
-                            title: guessModelName(model),
-                                                         value: model
-                        }))
+                        "ollama": dataJson
+                            .filter(model => !EMBED_MODELS.some(e => model.toLowerCase().includes(e)))
+                            .map(model => ({
+                                title: guessModelName(model),
+                                value: model
+                            }))
                     });
                 } catch (e) {
                     console.log("Could not fetch Ollama models:", e);
@@ -1729,12 +2122,21 @@ Singleton {
                 root.postResponseHook();
                 root.postResponseHook = null; // Reset hook after use
             }
+            root.requestRestoreSidebars();
             root.saveChat("lastSession")
             root.responseFinished()
         }
 
         function makeRequest() {
             const model = models[currentModelId];
+
+            // Guard against infinite tool-call loops
+            root.consecutiveToolCalls++;
+            if (root.consecutiveToolCalls > root.maxConsecutiveToolCalls) {
+                root.consecutiveToolCalls = 0;
+                root.addMessage(`[Stopped: ${root.maxConsecutiveToolCalls} consecutive tool calls without user input. Please check what went wrong.]`, root.interfaceRole);
+                return;
+            }
 
             // Fetch API keys if needed
             if (model?.requires_key && !KeyringStorage.loaded) KeyringStorage.fetchKeyringData();
@@ -1749,7 +2151,32 @@ Singleton {
             const endpoint = root.currentApiStrategy.buildEndpoint(model);
             const messageArray = root.messageIDs.map(id => root.messageByID[id]);
             const filteredMessageArray = messageArray.filter(message => message.role !== Ai.interfaceRole);
-            const data = root.currentApiStrategy.buildRequestData(model, filteredMessageArray, root.systemPrompt, root.temperature, root.tools[model.api_format][root.currentTool], root.pendingFilePath);
+            // Strip old file/image data from history — only the current pendingFilePath is sent.
+            // Resending base64 screenshots in every message blows context on long agentic chains.
+            const lastImgIdx = filteredMessageArray.reduce((last, m, i) => (m.fileUri?.length > 0 || m.filePath?.length > 0) ? i : last, -1);
+            const trimmedMessageArray = filteredMessageArray.map((m, i) => {
+                if (i < lastImgIdx && (m.fileUri?.length > 0 || m.filePath?.length > 0)) {
+                    const stripped = Object.assign({}, m);
+                    stripped.fileUri = "";
+                    stripped.filePath = "";
+                    stripped.fileMimeType = "";
+                    return stripped;
+                }
+                return m;
+            });
+            // Context compaction: when context grows large, drop old tool-result messages
+            // keeping only the most recent ones. Preserves real user/assistant conversation.
+            const TOOL_RESULT_KEEP = 20;
+            let contextArr = trimmedMessageArray;
+            if (contextArr.length > 50) {
+                const toolMsgs = contextArr.filter(m => m.functionName && m.functionName.length > 0);
+                if (toolMsgs.length > TOOL_RESULT_KEEP) {
+                    const dropSet = new Set(toolMsgs.slice(0, toolMsgs.length - TOOL_RESULT_KEEP));
+                    contextArr = contextArr.filter(m => !dropSet.has(m));
+                    console.log(`[AI] Context compacted: dropped ${dropSet.size} old tool results (${contextArr.length} messages remaining)`);
+                }
+            }
+            const data = root.currentApiStrategy.buildRequestData(model, contextArr, root.systemPrompt, root.temperature, root.tools[model.api_format][root.currentTool], root.pendingFilePath);
             // console.log("[Ai] Request data: ", JSON.stringify(data, null, 2));
 
             let requestHeaders = {
@@ -1794,7 +2221,7 @@ Singleton {
 
             /* Create command string */
             let scriptRequestContent = ""
-            scriptRequestContent += `curl --no-buffer "${endpoint}"`
+            scriptRequestContent += `curl --no-buffer --max-time 120 --connect-timeout 15 "${endpoint}"`
                 + ` ${headerString}`
                 + (authHeader ? ` ${authHeader}` : "")
                 + ` --data '${CF.StringUtils.shellSingleQuoteEscape(JSON.stringify(data))}'`
@@ -1821,6 +2248,7 @@ Singleton {
                     // console.log("[Ai] Parsed response result: ", JSON.stringify(result, null, 2));
 
                     if (result.functionCall) {
+                        console.log("[AI] Dispatching functionCall:", result.functionCall.name);
                         requester.message.functionCall = result.functionCall;
                         root.handleFunctionCall(result.functionCall.name, result.functionCall.args, requester.message);
                     }
@@ -1857,8 +2285,15 @@ Singleton {
         }
     }
 
+    property int consecutiveToolCalls: 0
+    property bool _turnHadPlan: false
+    readonly property int maxConsecutiveToolCalls: 25
+
     function sendUserMessage(message) {
         if (message.length === 0) return;
+        root.consecutiveToolCalls = 0;
+        root._turnHadPlan = false;
+        root.requestRestoreSidebars();
         root.addMessage(message, "user");
         requester.makeRequest();
     }
@@ -1941,11 +2376,19 @@ Singleton {
         }
         onExited: (exitCode, exitStatus) => {
             commandExecutionProc.message.functionResponse += `[[ Command exited with code ${exitCode} (${exitStatus}) ]]\n`;
-            requester.makeRequest(); // Continue
+            requester.makeRequest();
         }
     }
 
     function handleFunctionCall(name, args: var, message: AiMessageData) {
+        // show_plan gate: for action tools on a new turn (2+ tool calls), require a plan first
+        const actionTools = ["click_at","click_cell","type_text","press_key","launch_app","scroll"];
+        if (!root._turnHadPlan && root.consecutiveToolCalls >= 2 && actionTools.includes(name)) {
+            // Inject a reminder to plan first
+            addFunctionOutputMessage(name, `[Gate] You attempted '${name}' without calling show_plan first. Please call show_plan with the full task breakdown before executing any actions.`);
+            requester.makeRequest();
+            return;
+        }
         if (name === "switch_to_search_mode") {
             const modelId = root.currentModelId;
             root.currentTool = "search"
@@ -2021,14 +2464,23 @@ Singleton {
                 requester.makeRequest();
                 return;
             }
+            // Also keep file-based memory for system prompt injection
             const existing = memoryFileView.text() || "";
             const timestamp = new Date().toISOString().split("T")[0];
             const newEntry = existing.trim().length > 0
                 ? `${existing.trim()}\n- [${timestamp}] ${content}`
                 : `- [${timestamp}] ${content}`;
             memoryFileView.setText(newEntry);
-            addFunctionOutputMessage(name, `Memory saved: "${content}"`);
-            requester.makeRequest();
+            // Store in SQLite with embedding
+            const memMsg = createFunctionOutputMessage(name, "", false);
+            const memId = idForMessage(memMsg);
+            root.messageIDs = [...root.messageIDs, memId];
+            root.messageByID[memId] = memMsg;
+            commandExecutionProc.message = memMsg;
+            commandExecutionProc.baseMessageContent = memMsg.content;
+            commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" store user ${JSON.stringify(content)} 2>&1`;
+            commandExecutionProc.running = true;
+            return;
         } else if (name === "create_todo") {
             const title = args.title || "";
             if (!title) {
@@ -2086,11 +2538,34 @@ Singleton {
                 requester.makeRequest();
                 return;
             }
+            // Also remove from file-based memory
             const existing = memoryFileView.text() || "";
             const filtered = existing.split("\n").filter(line => !line.toLowerCase().includes(content.toLowerCase()));
             memoryFileView.setText(filtered.join("\n"));
-            addFunctionOutputMessage(name, `Memory entry removed: "${content}"`);
-            requester.makeRequest();
+            // Delete from SQLite by text match
+            const fmMsg = createFunctionOutputMessage(name, "", false);
+            const fmId = idForMessage(fmMsg);
+            root.messageIDs = [...root.messageIDs, fmId];
+            root.messageByID[fmId] = fmMsg;
+            commandExecutionProc.message = fmMsg;
+            commandExecutionProc.baseMessageContent = fmMsg.content;
+            commandExecutionProc.shellCommand = `python3 -c "
+import sqlite3, sys
+db = '${Directories.aiMemoryPath.replace('memory.md', 'memory.db')}'
+content = sys.argv[1].lower()
+conn = sqlite3.connect(db)
+rows = conn.execute('SELECT id, text FROM memories').fetchall()
+deleted = 0
+for row in rows:
+    if content in row[1].lower():
+        conn.execute('DELETE FROM memories WHERE id=?', (row[0],))
+        deleted += 1
+conn.commit()
+conn.close()
+print(f'Removed {deleted} matching memories for: {sys.argv[1]}')
+" ${JSON.stringify(content)} 2>&1`;
+            commandExecutionProc.running = true;
+            return;
         } else if (name === "export_chat") {
             const ts = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
             const filename = (args.filename || ts).replace(/[^a-zA-Z0-9_\-]/g, "_");
@@ -2148,30 +2623,100 @@ Singleton {
             const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
             screenshotProc.targetPath = dest;
             screenshotProc.message = message;
-            // Take screenshot, downscale to 1920px wide if needed, output IMAGE_SIZE and IMAGE_SCALE
+            // Capture all monitors, downscale to 1920px wide, output metadata
             const cmd = `
 DEST="${dest}"
 grim "$DEST" 2>&1 || exit 1
-IMG_W=$(identify -format '%w' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[0])" 2>/dev/null || echo 0)
-IMG_H=$(identify -format '%h' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[1])" 2>/dev/null || echo 0)
-SCALE=1
-if [ "$IMG_W" -gt 1920 ] 2>/dev/null; then
-  SCALE=$(python3 -c "print(round(${IMG_W}/1920, 4))")
-  NEW_W=1920
-  NEW_H=$(python3 -c "print(int(${IMG_H}*1920/${IMG_W}))")
-  magick "$DEST" -resize "${NEW_W}x${NEW_H}" "$DEST" 2>/dev/null
-fi
-echo "IMAGE_SIZE:${IMG_W}:${IMG_H}"
-echo "IMAGE_SCALE:${SCALE}"
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 8
+rows = max(4, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+r = 18
+draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
+draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
+draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
+import json
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+min_x = min((m.get('x',0) for m in monitors), default=0)
+min_y = min((m.get('y',0) for m in monitors), default=0)
+for mon in monitors:
+    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
+    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
+    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+Image.alpha_composite(img, overlay).convert('RGB').save(dest)
+print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
+CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:1"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
-            screenshotProc.command = ["bash", "-c", cmd];
-            screenshotProc.running = true;
+            root.requestHideSidebars();
+            const _cmd = cmd;
+            sidebarHideTimer.pendingAction = () => {
+                screenshotProc.command = ["bash", "-c", _cmd];
+                screenshotProc.running = true;
+            };
+            sidebarHideTimer.restart();
         } else if (name === "launch_app") {
             const app = args.app || "";
             if (!app) { addFunctionOutputMessage(name, "Invalid: app is required"); requester.makeRequest(); return; }
-            Quickshell.execDetached(["bash", "-c", `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1`]);
-            addFunctionOutputMessage(name, `Launched: ${app}`);
-            requester.makeRequest();
+            const launchMsg = createFunctionOutputMessage(name, "", false);
+            const launchId = idForMessage(launchMsg);
+            root.messageIDs = [...root.messageIDs, launchId];
+            root.messageByID[launchId] = launchMsg;
+            commandExecutionProc.message = launchMsg;
+            commandExecutionProc.baseMessageContent = launchMsg.content;
+            const appBin = app.split(" ")[0].toLowerCase().replace(/[^a-z0-9_\-]/g, "");
+            commandExecutionProc.shellCommand = `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1; sleep 2; pgrep -xi "${appBin}" > /dev/null && echo "Started: ${app}" || echo "Launch command sent but process '${appBin}' not detected. If this is a Steam game, use open_file with its steam://rungameid/APPID URI instead."`;
+            commandExecutionProc.running = true;
         } else if (name === "open_file") {
             const path = args.path || "";
             if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); requester.makeRequest(); return; }
@@ -2215,33 +2760,66 @@ echo "IMAGE_SCALE:${SCALE}"
         } else if (name === "manage_notes") {
             const action = args.action || "list";
             const content = args.content || "";
+            const tags = args.tags || "";
+            const mnMsg = createFunctionOutputMessage(name, "", false);
+            const mnId = idForMessage(mnMsg);
+            root.messageIDs = [...root.messageIDs, mnId];
+            root.messageByID[mnId] = mnMsg;
+            commandExecutionProc.message = mnMsg;
+            commandExecutionProc.baseMessageContent = mnMsg.content;
             if (action === "list" || action === "read") {
-                const text = notesFileView.text() || "[]";
-                try {
-                    const notes = JSON.parse(text);
-                    const formatted = notes.length === 0 ? "No notes saved." :
-                        notes.map((n, i) => `${i + 1}. [${n.timestamp}] ${n.content}`).join("\n");
-                    addFunctionOutputMessage(name, formatted);
-                } catch(e) {
-                    addFunctionOutputMessage(name, text);
-                }
-                requester.makeRequest();
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" list 50 2>&1`;
             } else if (action === "add") {
                 if (!content) { addFunctionOutputMessage(name, "Invalid: content is required for add"); requester.makeRequest(); return; }
-                let notes = [];
-                try { notes = JSON.parse(notesFileView.text() || "[]"); } catch(e) {}
-                notes.push({ timestamp: new Date().toISOString().split("T")[0], content: content });
-                notesFileView.setText(JSON.stringify(notes));
-                addFunctionOutputMessage(name, `Note added: "${content}"`);
-                requester.makeRequest();
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" store notes ${JSON.stringify(content)} ${JSON.stringify(tags)} 2>&1`;
             } else if (action === "clear") {
-                notesFileView.setText("[]");
-                addFunctionOutputMessage(name, "All notes cleared.");
-                requester.makeRequest();
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" clear 2>&1`;
             } else {
                 addFunctionOutputMessage(name, `Unknown action: ${action}. Use 'list', 'add', or 'clear'.`);
                 requester.makeRequest();
+                return;
             }
+            commandExecutionProc.running = true;
+            return;
+        } else if (name === "search_memory") {
+            const query = args.query || "";
+            if (!query) { addFunctionOutputMessage(name, "Invalid: query is required"); requester.makeRequest(); return; }
+            const limit = Math.min(parseInt(args.limit) || 5, 20);
+            const smMsg = createFunctionOutputMessage(name, "", false);
+            const smId = idForMessage(smMsg);
+            root.messageIDs = [...root.messageIDs, smId];
+            root.messageByID[smId] = smMsg;
+            commandExecutionProc.message = smMsg;
+            commandExecutionProc.baseMessageContent = smMsg.content;
+            commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" search ${JSON.stringify(query)} ${limit} 2>&1`;
+            commandExecutionProc.running = true;
+            return;
+        } else if (name === "schedule_task") {
+            const action = args.action || "list";
+            const stMsg = createFunctionOutputMessage(name, "", false);
+            const stId = idForMessage(stMsg);
+            root.messageIDs = [...root.messageIDs, stId];
+            root.messageByID[stId] = stMsg;
+            commandExecutionProc.message = stMsg;
+            commandExecutionProc.baseMessageContent = stMsg.content;
+            if (action === "add") {
+                const cron = args.cron || "";
+                const prompt = args.prompt || "";
+                if (!cron || !prompt) { addFunctionOutputMessage(name, "Invalid: cron and prompt required for add"); requester.makeRequest(); return; }
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" schedule_add ${JSON.stringify(cron)} ${JSON.stringify(prompt)} 2>&1`;
+            } else if (action === "list") {
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" schedule_list 2>&1`;
+            } else if (action === "delete") {
+                const taskId = parseInt(args.id) || 0;
+                if (!taskId) { addFunctionOutputMessage(name, "Invalid: id required for delete"); requester.makeRequest(); return; }
+                commandExecutionProc.shellCommand = `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" schedule_delete ${taskId} 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, `Unknown action: ${action}. Use 'add', 'list', or 'delete'.`);
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.running = true;
+            return;
         } else if (name === "capture_region") {
             const capPath = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/region_capture.png`);
             regionCaptureProc.targetPath = capPath;
@@ -2285,9 +2863,11 @@ echo "IMAGE_SCALE:${SCALE}"
             const sx = Math.max(0, Math.min(Math.round(rawX * scale), imgW)) + root.lastScreenshotOffsetX;
             const sy = Math.max(0, Math.min(Math.round(rawY * scale), imgH)) + root.lastScreenshotOffsetY;
             const ydoBtn = button === "right" ? "3" : button === "middle" ? "2" : "1";
+            root._lastClickInfo = `click_at (${rawX}, ${rawY})`;
             addFunctionOutputMessage(name, `Clicking (${rawX}, ${rawY}) → screen (${sx}, ${sy})`);
             // Move mouse and click, then take a new screenshot automatically
-            const clickCmd = `ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            const clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            root.requestHideSidebars();
             Quickshell.execDetached(["bash", "-c", clickCmd]);
             // After click, auto-take a fresh screenshot so the model can see the result
             Qt.callLater(() => {
@@ -2297,17 +2877,177 @@ echo "IMAGE_SCALE:${SCALE}"
                 const cmd = `
 DEST="${dest}"
 grim "$DEST" 2>&1 || exit 1
-IMG_W=$(identify -format '%w' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[0])" 2>/dev/null || echo 0)
-IMG_H=$(identify -format '%h' "$DEST" 2>/dev/null || python3 -c "from PIL import Image; print(Image.open('$DEST').size[1])" 2>/dev/null || echo 0)
-SCALE=1
-if [ "$IMG_W" -gt 1920 ] 2>/dev/null; then
-  SCALE=$(python3 -c "print(round(${IMG_W}/1920, 4))")
-  NEW_W=1920
-  NEW_H=$(python3 -c "print(int(${IMG_H}*1920/${IMG_W}))")
-  magick "$DEST" -resize "${NEW_W}x${NEW_H}" "$DEST" 2>/dev/null
-fi
-echo "IMAGE_SIZE:${IMG_W}:${IMG_H}"
-echo "IMAGE_SCALE:${SCALE}"
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 8
+rows = max(4, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+r = 18
+draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
+draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
+draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
+import json
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+min_x = min((m.get('x',0) for m in monitors), default=0)
+min_y = min((m.get('y',0) for m in monitors), default=0)
+for mon in monitors:
+    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
+    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
+    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+Image.alpha_composite(img, overlay).convert('RGB').save(dest)
+print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
+CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:1"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
+`;
+                screenshotProc.command = ["bash", "-c", cmd];
+                screenshotProc.running = true;
+            });
+        } else if (name === "click_cell") {
+            const cellNum = Math.max(1, parseInt(args.cell) || 1);
+            const cols    = root.lastGridCols  > 0 ? root.lastGridCols  : 8;
+            const rows    = root.lastGridRows  > 0 ? root.lastGridRows  : 5;
+            const imgW    = root.lastScreenshotWidth  > 0 ? root.lastScreenshotWidth  : 3840;
+            const imgH    = root.lastScreenshotHeight > 0 ? root.lastScreenshotHeight : 2160;
+            const idx     = Math.min(cellNum - 1, cols * rows - 1);
+            const col     = idx % cols;
+            const row     = Math.floor(idx / cols);
+            const rawX    = Math.round(col * (imgW / cols) + (imgW / cols) / 2);
+            const rawY    = Math.round(row * (imgH / rows) + (imgH / rows) / 2);
+            const button  = (args.button || "left").toLowerCase();
+            const ydoBtn  = button === "right" ? "3" : button === "middle" ? "2" : "1";
+            const sx = rawX + root.lastScreenshotOffsetX;
+            const sy = rawY + root.lastScreenshotOffsetY;
+            root._lastClickInfo = `click_cell ${cellNum}`;
+            addFunctionOutputMessage(name, `Clicking cell ${cellNum} (row ${row+1}, col ${col+1}) → screen (${sx}, ${sy})`);
+            const clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            root.requestHideSidebars();
+            Quickshell.execDetached(["bash", "-c", clickCmd]);
+            Qt.callLater(() => {
+                const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
+                const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
+                screenshotProc.targetPath = dest;
+                const cmd = `
+DEST="${dest}"
+grim "$DEST" 2>&1 || exit 1
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 8
+rows = max(4, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+r = 18
+draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
+draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
+draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
+import json
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+min_x = min((m.get('x',0) for m in monitors), default=0)
+min_y = min((m.get('y',0) for m in monitors), default=0)
+for mon in monitors:
+    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
+    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
+    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+Image.alpha_composite(img, overlay).convert('RGB').save(dest)
+print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
+CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:1"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
                 screenshotProc.command = ["bash", "-c", cmd];
                 screenshotProc.running = true;
@@ -2349,6 +3089,92 @@ echo "IMAGE_SCALE:${SCALE}"
             Quickshell.execDetached(["bash", "-c", `ydotool key ${keyCodes.map(c => c + ":1").join(" ")} ${keyCodes.reverse().map(c => c + ":0").join(" ")}`]);
             addFunctionOutputMessage(name, `Pressed: ${key}`);
             requester.makeRequest();
+        } else if (name === "memory_file") {
+            const command = (args.command || "view").trim();
+            const rawPath = (args.path || "/memories/").trim();
+            if (!rawPath.startsWith("/memories")) {
+                addFunctionOutputMessage(name, "Error: path must start with /memories/");
+                requester.makeRequest();
+                return;
+            }
+            const memBase = Directories.aiMemoryPath.replace("memory.md", "memories");
+            const rel = rawPath.replace(/^\/memories\/?/, "");
+            const safePath = rel.length > 0 ? `${memBase}/${rel}` : memBase;
+            const memMsg = createFunctionOutputMessage(name, "", false);
+            const memId = idForMessage(memMsg);
+            root.messageIDs = [...root.messageIDs, memId];
+            root.messageByID[memId] = memMsg;
+            commandExecutionProc.message = memMsg;
+            commandExecutionProc.baseMessageContent = memMsg.content;
+            let shellCmd = "";
+            if (command === "view") {
+                shellCmd = `mkdir -p "${memBase}"; [ -d "${safePath}" ] && (echo "Directory ${rawPath}:"; ls "${safePath}" 2>/dev/null || echo "  (empty)") || ([ -f "${safePath}" ] && cat "${safePath}" || echo "Not found: ${rawPath}")`;
+            } else if (command === "create") {
+                const b64 = btoa(unescape(encodeURIComponent(args.file_text || "")));
+                shellCmd = `mkdir -p "$(dirname "${safePath}")" 2>/dev/null; python3 -c "import base64; open('${safePath}','w').write(base64.b64decode('${b64}').decode('utf-8'))" && echo "Created: ${rawPath}"`;
+            } else if (command === "str_replace") {
+                const b64Old = btoa(unescape(encodeURIComponent(args.old_str || "")));
+                const b64New = btoa(unescape(encodeURIComponent(args.new_str || "")));
+                shellCmd = `python3 -c "
+import base64
+old=base64.b64decode('${b64Old}').decode()
+new=base64.b64decode('${b64New}').decode()
+with open('${safePath}') as f: c=f.read()
+if old not in c: print('Error: text not found in file'); exit(1)
+with open('${safePath}','w') as f: f.write(c.replace(old,new,1))
+print('Updated: ${rawPath}')
+" 2>&1`;
+            } else if (command === "insert") {
+                const insertLine = parseInt(args.insert_line) || 0;
+                const b64Text = btoa(unescape(encodeURIComponent(args.insert_text || "")));
+                shellCmd = `python3 -c "
+import base64
+text=base64.b64decode('${b64Text}').decode()
+with open('${safePath}') as f: lines=f.readlines()
+lines.insert(${insertLine}, text if text.endswith('\\\\n') else text+'\\\\n')
+with open('${safePath}','w') as f: f.writelines(lines)
+print('Inserted at line ${insertLine}: ${rawPath}')
+" 2>&1`;
+            } else if (command === "delete") {
+                shellCmd = `rm -rf "${safePath}" && echo "Deleted: ${rawPath}" || echo "Not found: ${rawPath}"`;
+            } else {
+                addFunctionOutputMessage(name, `Unknown command: ${command}. Use: view, create, str_replace, insert, delete`);
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.shellCommand = shellCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "scroll") {
+            const dir = (args.direction || "down").toLowerCase();
+            const amount = Math.min(Math.max(parseInt(args.amount) || 3, 1), 20);
+            let ax = 0, ay = 0;
+            if (dir === "up") ay = -amount;
+            else if (dir === "down") ay = amount;
+            else if (dir === "left") ax = -amount;
+            else if (dir === "right") ax = amount;
+            Quickshell.execDetached(["bash", "-c", `ydotool mousescroll --axis-x ${ax} --axis-y ${ay}`]);
+            addFunctionOutputMessage(name, `Scrolled ${dir} ${amount} step(s)`);
+            requester.makeRequest();
+        } else if (name === "read_clipboard_text") {
+            const clipMsg = createFunctionOutputMessage(name, "", false);
+            const clipId = idForMessage(clipMsg);
+            root.messageIDs = [...root.messageIDs, clipId];
+            root.messageByID[clipId] = clipMsg;
+            commandExecutionProc.message = clipMsg;
+            commandExecutionProc.baseMessageContent = clipMsg.content;
+            commandExecutionProc.shellCommand = `wl-paste 2>/dev/null || echo "(clipboard is empty)"`;
+            commandExecutionProc.running = true;
+        } else if (name === "write_clipboard") {
+            const text = args.text || "";
+            if (!text) { addFunctionOutputMessage(name, "Invalid: text is required"); requester.makeRequest(); return; }
+            const clipMsg = createFunctionOutputMessage(name, "", false);
+            const clipId = idForMessage(clipMsg);
+            root.messageIDs = [...root.messageIDs, clipId];
+            root.messageByID[clipId] = clipMsg;
+            commandExecutionProc.message = clipMsg;
+            commandExecutionProc.baseMessageContent = clipMsg.content;
+            commandExecutionProc.shellCommand = `printf '%s' ${JSON.stringify(text)} | wl-copy 2>&1 && echo "Copied to clipboard"`;
+            commandExecutionProc.running = true;
         } else if (name === "search_app") {
             const app = (args.app || "").toLowerCase().replace(/[_\s]/g, "");
             const query = args.query || "";
@@ -2378,9 +3204,179 @@ echo "IMAGE_SCALE:${SCALE}"
                 default: uri = `https://google.com/search?q=${encoded}+site:${app}`; break;
             }
             Quickshell.execDetached(["xdg-open", uri]);
-            addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}"`);
-            requester.makeRequest();
+            // For native apps (Spotify etc), auto-screenshot after load so AI can click results visually
+            const isNativeApp = ["spotify"].includes(app);
+            if (isNativeApp) {
+                addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}" — taking screenshot to show results...`);
+                nativeAppSearchTimer.restart();
+            } else {
+                addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}"`);
+                requester.makeRequest();
+            }
+        } else if (name === "read_url") {
+            const url = (args.url || "").trim();
+            if (!url) { addFunctionOutputMessage(name, "Error: no URL provided"); requester.makeRequest(); return; }
+            const readMsg = createFunctionOutputMessage(name, "", false);
+            const readId = idForMessage(readMsg);
+            root.messageIDs = [...root.messageIDs, readId];
+            root.messageByID[readId] = readMsg;
+            commandExecutionProc.message = readMsg;
+            commandExecutionProc.baseMessageContent = readMsg.content;
+            commandExecutionProc.shellCommand = `
+curl -sL --max-time 15 -A "Mozilla/5.0" '${url.replace(/'/g, "'\\''")}' | python3 << 'PYEOF'
+import sys, re
+from html.parser import HTMLParser
+
+class ElemParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self.title = ""
+        self._in_title = False
+        self._skip_tags = {"script","style","noscript","svg","head"}
+        self._skip_depth = 0
+        self._interactive = {"input","button","select","textarea","a","form","label"}
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in self._skip_tags:
+            self._skip_depth += 1
+            return
+        if self._skip_depth: return
+        if tag == "title":
+            self._in_title = True
+        if tag in self._interactive:
+            parts = [tag]
+            for k in ("id","name","type","placeholder","href","value","aria-label","for"):
+                if k in a: parts.append(f'{k}="{a[k]}"')
+            txt = " ".join(parts)
+            self.results.append(txt)
+
+    def handle_endtag(self, tag):
+        if tag in self._skip_tags and self._skip_depth:
+            self._skip_depth -= 1
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+
+html = sys.stdin.read()
+p = ElemParser()
+p.feed(html)
+print(f"Page: {p.title.strip()}")
+print(f"URL: ${url.replace(/'/g, "'\\''")}")
+print(f"Elements ({len(p.results)}):")
+for e in p.results[:80]:
+    print(" ", e)
+if len(p.results) > 80:
+    print(f"  ... and {len(p.results)-80} more")
+PYEOF
+`;
+            commandExecutionProc.running = true;
+            return;
+        } else if (name === "execute_js") {
+            const js = (args.code || "").trim();
+            if (!js) { addFunctionOutputMessage(name, "Error: no JS code provided"); requester.makeRequest(); return; }
+            const b64 = btoa(unescape(encodeURIComponent(js)));
+            const jsUrl = `javascript:eval(atob('${b64}'))`;
+            addFunctionOutputMessage(name, `Executing JS in browser...`);
+            // Focus address bar, type JS URL, press Enter
+            const execCmd = `
+sleep 0.1
+wtype -M ctrl l -m ctrl
+sleep 0.15
+wtype -s 20 ${JSON.stringify(jsUrl)}
+sleep 0.05
+wtype -k return
+`;
+            Quickshell.execDetached(["bash", "-c", execCmd]);
+            // Auto-screenshot after JS has time to run (2s delay)
+            Qt.callLater(() => {
+                const dest = "/tmp/quickshell/ai/screenshot.png";
+                const cmd = `
+mkdir -p /tmp/quickshell/ai
+sleep 2
+DEST="${dest}"
+grim "$DEST" 2>&1 || exit 1
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 8
+rows = max(4, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/TTF/LiberationSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+r = 18
+draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
+draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
+draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
+import json
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+min_x = min((m.get('x',0) for m in monitors), default=0)
+min_y = min((m.get('y',0) for m in monitors), default=0)
+for mon in monitors:
+    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
+    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
+    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+Image.alpha_composite(img, overlay).convert('RGB').save(dest)
+print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
+CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:1"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
+`;
+                screenshotProc.targetPath = dest;
+                screenshotProc.running = false;
+                screenshotProc.command = ["bash", "-c", cmd];
+                root.pendingFilePath = dest;
+                screenshotProc.running = true;
+            });
+            return;
         } else if (name === "show_plan") {
+            root._turnHadPlan = true;
             const title = args.title || "Task Plan";
             const steps = args.steps || [];
             const stepsText = steps.map((s, i) => `${i + 1}. **${s.description}**${s.tool ? ` *(${s.tool})*` : ""}`).join("\n");
@@ -2401,6 +3397,8 @@ echo "IMAGE_SCALE:${SCALE}"
             commandExecutionProc.baseMessageContent = waitMsg.content;
             commandExecutionProc.shellCommand = `timeout ${timeout} bash -c 'until pgrep -xi "${app}" > /dev/null 2>&1; do sleep 0.5; done && echo "${app} is ready"' 2>/dev/null || echo "${app} did not start within ${timeout}s"`;
             commandExecutionProc.running = true;
+        } else if (name === "exit" || name === "done" || name === "finish") {
+            // Model sometimes calls these to signal it's done — silently ignore
         } else root.addMessage(Translation.tr("Unknown function call: %1").arg(name), "assistant");
     }
 
@@ -2422,26 +3420,46 @@ echo "IMAGE_SCALE:${SCALE}"
         property AiMessageData message
         stdout: StdioCollector {
             onStreamFinished: {
-                // Parse IMAGE_SIZE and IMAGE_SCALE from bash output
+                // Parse CURSOR_POS, GRID, IMAGE_SIZE, IMAGE_SCALE from bash output
                 const lines = this.text.split("\n");
-                let imgW = 0, imgH = 0, scale = 1.0;
+                let imgW = 0, imgH = 0, scale = 1.0, curX = -1, curY = -1, gridCols = 8, gridRows = 5, offX = 0, offY = 0;
                 for (const line of lines) {
-                    if (line.startsWith("IMAGE_SIZE:")) {
+                    if (line.startsWith("CURSOR_POS:")) {
+                        const parts = line.split(":");
+                        curX = parseInt(parts[1]) || 0;
+                        curY = parseInt(parts[2]) || 0;
+                    } else if (line.startsWith("GRID:")) {
+                        const parts = line.split(":");
+                        gridCols = parseInt(parts[1]) || 8;
+                        gridRows = parseInt(parts[2]) || 5;
+                    } else if (line.startsWith("IMAGE_SIZE:")) {
                         const parts = line.split(":");
                         imgW = parseInt(parts[1]) || 0;
                         imgH = parseInt(parts[2]) || 0;
                     } else if (line.startsWith("IMAGE_SCALE:")) {
                         scale = parseFloat(line.split(":")[1]) || 1.0;
+                    } else if (line.startsWith("SCREENSHOT_OFFSET:")) {
+                        const parts = line.split(":");
+                        offX = parseInt(parts[1]) || 0;
+                        offY = parseInt(parts[2]) || 0;
                     }
                 }
                 root.lastScreenshotWidth  = imgW;
                 root.lastScreenshotHeight = imgH;
                 root.lastScreenshotScale  = scale;
-                root.lastScreenshotOffsetX = 0;
-                root.lastScreenshotOffsetY = 0;
+                root.lastScreenshotOffsetX = offX;
+                root.lastScreenshotOffsetY = offY;
+                root.lastGridCols = gridCols;
+                root.lastGridRows = gridRows;
 
+                const cursorInfo = curX >= 0 ? ` Cursor at (${curX}, ${curY}).` : "";
+                const gridInfo = ` Grid: ${gridCols}×${gridRows} (cell size ${(imgW/gridCols)|0}×${(imgH/gridRows)|0}px).`;
+                const evalHint = root._lastClickInfo.length > 0
+                    ? ` Previous action: ${root._lastClickInfo}. CHECK: did the UI change as expected? If not, try a different approach.`
+                    : " Analyze the screenshot now.";
+                root._lastClickInfo = "";
                 root.pendingFilePath = screenshotProc.targetPath;
-                addFunctionOutputMessage("take_screenshot", "Screenshot taken. Now analyzing...");
+                addFunctionOutputMessage("take_screenshot", `Screenshot taken (${imgW}×${imgH}).${cursorInfo}${gridInfo}${evalHint}`);
                 requester.makeRequest();
             }
         }
@@ -2550,6 +3568,130 @@ echo "IMAGE_SCALE:${SCALE}"
         onTriggered: {
             windowListProc.running = true;
             mediaContextProc.running = true;
+        }
+    }
+
+    // Auto-screenshot after native app search (e.g. Spotify) so AI can click results
+    Timer {
+        id: nativeAppSearchTimer
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            const dest = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/screenshot.png`);
+            const cmd = `
+DEST="${dest}"
+grim "$DEST" 2>&1 || exit 1
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" python3 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 8
+rows = max(4, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/TTF/LiberationSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(18, min(32, cell_h//7))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-4,bb[1]-4,bb[2]+4,bb[3]+4], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+r = 18
+draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=(255,60,60,230), width=3)
+draw.line([cx-26,cy,cx+26,cy], fill=(255,60,60,230), width=2)
+draw.line([cx,cy-26,cx,cy+26], fill=(255,60,60,230), width=2)
+import json
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+min_x = min((m.get('x',0) for m in monitors), default=0)
+min_y = min((m.get('y',0) for m in monitors), default=0)
+for mon in monitors:
+    mx=mon.get('x',0)-min_x; my=mon.get('y',0)-min_y; mw=mon.get('width',0); mh=mon.get('height',0)
+    draw.rectangle([mx,my,mx+mw-1,my+mh-1], outline=(80,200,255,200), width=6)
+    draw.text((mx+14,my+14), mon.get('name','?'), fill=(80,200,255,230), font=font)
+Image.alpha_composite(img, overlay).convert('RGB').save(dest)
+print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{min_x}:{min_y}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
+CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:1"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
+`;
+            root.requestHideSidebars();
+            screenshotProc.targetPath = dest;
+            screenshotProc.running = false;
+            screenshotProc.command = ["bash", "-c", cmd];
+            root.pendingFilePath = dest;
+            screenshotProc.running = true;
+        }
+    }
+
+    // Background job scheduler — checks for due cron tasks every 60s
+    Process {
+        id: schedulerCheckProc
+        property string dueLine: ""
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.trim().split("\n");
+                for (const line of lines) {
+                    if (line.startsWith("DUE:")) {
+                        const parts = line.split(":");
+                        const taskId = parts[1];
+                        const prompt = parts.slice(2).join(":");
+                        // Mark as ran then fire the prompt as a user message
+                        schedulerMarkProc.command = ["bash", "-c",
+                            `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" schedule_ran ${taskId}`];
+                        schedulerMarkProc.running = true;
+                        root.addMessage(prompt, "user");
+                    }
+                }
+            }
+        }
+    }
+
+    Process { id: schedulerMarkProc }
+
+    Timer {
+        id: schedulerTimer
+        running: true
+        repeat: true
+        interval: 60000
+        onTriggered: {
+            schedulerCheckProc.command = ["bash", "-c",
+                `python3 "${Directories.aiMemoryPath.replace('memory.md', 'memory.py')}" schedule_due 2>/dev/null`];
+            schedulerCheckProc.running = true;
         }
     }
 

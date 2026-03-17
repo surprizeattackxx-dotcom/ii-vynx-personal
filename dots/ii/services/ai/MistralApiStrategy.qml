@@ -32,6 +32,7 @@ ApiStrategy {
             ],
             "stream": true,
             "temperature": temperature,
+            "max_tokens": 8192,
             "tools": tools,
         };
         // console.log("[AI] Request data: ", JSON.stringify(baseData, null, 2));
@@ -120,7 +121,7 @@ ApiStrategy {
                 };
             }
 
-            if (`dataJson`.done) {
+            if (dataJson.done) {
                 return { finished: true };
             }
             
