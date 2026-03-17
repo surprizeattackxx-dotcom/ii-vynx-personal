@@ -2381,6 +2381,7 @@ Singleton {
     }
 
     function handleFunctionCall(name, args: var, message: AiMessageData) {
+        message.functionName = name; // Needed so approveCommand can label function output correctly
         // show_plan gate: for action tools on a new turn (2+ tool calls), require a plan first
         const actionTools = ["click_at","click_cell","type_text","press_key","launch_app","scroll"];
         if (!root._turnHadPlan && root.consecutiveToolCalls >= 2 && actionTools.includes(name)) {
