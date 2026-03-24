@@ -469,11 +469,11 @@ Item {
 
                     Behavior on implicitWidth {
                         enabled: !root.dragActive
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(pinnedListView)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
                     Behavior on implicitHeight {
                         enabled: !root.dragActive
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(pinnedListView)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
 
                     add: null
@@ -544,15 +544,15 @@ Item {
                     readonly property bool hasBothSections: root.processedPinnedApps.length > 0 && root.processedRunningApps.length > 0
 
                     Behavior on opacity {
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(appSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredWidth {
                         enabled: !root.isVertical
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(appSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredHeight {
                         enabled: root.isVertical
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(appSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
 
                     DockSeparator {
@@ -584,10 +584,10 @@ Item {
                     ScrollBar.vertical: null
 
                     Behavior on implicitWidth {
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(runningListView)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
                     Behavior on implicitHeight {
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(runningListView)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
 
                     add: null
@@ -636,15 +636,15 @@ Item {
                     visible: opacity > 0 && (root.processedPinnedApps.length > 0 || root.processedRunningApps.length > 0)
 
                     Behavior on opacity {
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(fileSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredWidth {
                         enabled: !root.isVertical
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(fileSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredHeight {
                         enabled: root.isVertical
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(fileSepWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
 
                     DockSeparator {
@@ -669,15 +669,15 @@ Item {
                     clip: true
 
                     Behavior on opacity {
-                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(fileListWrapper)
+                        animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredWidth {
                         enabled: !root.isVertical
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(fileListWrapper)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
                     Behavior on Layout.preferredHeight {
                         enabled: root.isVertical
-                        animation: Appearance.animation.elementMove.numberAnimation.createObject(fileListWrapper)
+                        animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                     }
 
                     Loader {
@@ -764,15 +764,15 @@ Item {
             clip: true
 
             Behavior on opacity {
-                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(musicSepWrapper)
+                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
             }
             Behavior on Layout.preferredWidth {
                 enabled: !root.isVertical
-                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(musicSepWrapper)
+                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
             }
             Behavior on Layout.preferredHeight {
                 enabled: root.isVertical
-                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(musicSepWrapper)
+                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
             }
 
             DockSeparator { 
@@ -821,7 +821,9 @@ Item {
                 id: mediaWidgetLoader
                 anchors.centerIn: parent
                 active: mediaWidgetWrapper.visible
-                sourceComponent: DockMediaWidget { isVertical: root.isVertical }
+                sourceComponent: DockMediaWidget { 
+                    isVertical: root.isVertical
+                }
             }
         }
 

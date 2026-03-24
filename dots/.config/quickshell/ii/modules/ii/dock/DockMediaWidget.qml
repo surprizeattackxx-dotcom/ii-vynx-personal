@@ -16,7 +16,6 @@ Item {
 
     property bool isVertical: false
 
-    // ── Sizing ────────────────────────────────────────────────────────────
     readonly property real buttonSize: Appearance.sizes.dockButtonSize
     readonly property real dotMargin: (Config.options?.dock.height ?? 60) * 0.2
     readonly property real slotSize: buttonSize + dotMargin * 2
@@ -26,17 +25,15 @@ Item {
     readonly property real artSize: Math.round(buttonSize * 0.9)
     readonly property real artInner: artSize
 
-    // Play/pause button
     readonly property real controlSize: Math.round(buttonSize * 0.68)
 
-    // Text
     readonly property int textSizeL: Math.round(buttonSize * (isVertical ? 0.24 : 0.26))
     readonly property int textSizeS: Math.round(buttonSize * (isVertical ? 0.20 : 0.22))
+    readonly property int marqueeRunningThreshold: isVertical ? 10 : 14
 
     implicitWidth: isVertical ? slotSize : fixedLength
     implicitHeight: isVertical ? fixedLength : slotSize
 
-    // ── Player state ──────────────────────────────────────────────────────
     readonly property MprisPlayer currentPlayer: MprisController.activePlayer
     readonly property bool isPlaying: currentPlayer?.isPlaying ?? false
 
@@ -44,14 +41,12 @@ Item {
     readonly property string finalArtist: currentPlayer?.trackArtist || Translation.tr("Unknown Artist")
     readonly property string finalArtUrl: currentPlayer?.trackArtUrl || ""
 
-    // ── Hover state ───────────────────────────────────────────────────────
     property bool mediaHovered: false
 
     HoverHandler {
         onHoveredChanged: root.mediaHovered = hovered
     }
 
-    // ── Inline component: artwork ─────────────────────────────────────────
     component ArtworkItem: Item {
         width: root.artSize
         height: root.artSize
@@ -85,7 +80,6 @@ Item {
             }
         }
 
-        // Fallback icon
         MaterialSymbol {
             anchors.centerIn: artRect
             visible: artImg.status !== Image.Ready
@@ -95,44 +89,7 @@ Item {
         }
     }
 
-    // ── Inline component: marquee text ────────────────────────────────────
-    component MarqueeText: Item {
-        id: marquee
-        property string text: ""
-        property int fontSize: root.textSizeL
-        property int fontWeight: Font.Normal
-        property color textColor: Appearance.colors.colOnLayer0
-        property bool running: false
 
-        clip: true
-        implicitHeight: innerText.implicitHeight
-
-        StyledText {
-            id: innerText
-            text: marquee.text
-            font.pixelSize: marquee.fontSize
-            font.weight: marquee.fontWeight
-            color: marquee.textColor
-            elide: Text.ElideNone
-            x: 0
-
-            readonly property bool overflows: implicitWidth > marquee.width + 1
-        }
-
-        NumberAnimation {
-            target: innerText
-            property: "x"
-            running: marquee.running && innerText.overflows
-            from: 0
-            to: -(innerText.implicitWidth - marquee.width + 20)
-            duration: Math.max(3500, (innerText.implicitWidth - marquee.width) * 28)
-            easing.type: Easing.Linear
-            loops: Animation.Infinite
-            onStopped: innerText.x = 0
-        }
-    }
-
-    // ── Inline component: next track button ───────────────────────────────
     component NextButton: RippleButton {
         id: nextBtn
         width: root.controlSize
@@ -153,9 +110,6 @@ Item {
             color: Appearance.colors.colOnLayer0
         }
     }
-
-    // ── Inline component: play/pause button ────────────────────
-
     
     component PlayButton: RippleButton {
         id: playBtn
@@ -178,122 +132,125 @@ Item {
         }
     }
 
-    // ── Horizontal layout ─────────────────────────────────────────────────
-    Item {
-        visible: !root.isVertical
+    Loader {
+        active: !root.isVertical
         anchors.fill: parent
+        sourceComponent: Item {
+            anchors.fill: parent
 
-        ArtworkItem {
-            id: artH
-            anchors.left: parent.left
-            anchors.leftMargin: root.dotMargin + musicSepWrapper.Layout.preferredWidth
-            anchors.verticalCenter: parent.verticalCenter
+            ArtworkItem {
+                id: artH
+                anchors.left: parent.left
+                anchors.leftMargin: root.dotMargin + musicSepWrapper.Layout.preferredWidth
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Row {
+                id: controlsH
+                anchors.right: parent.right
+                anchors.rightMargin: root.dotMargin * 0.4
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 0
+
+                PlayButton {}
+                NextButton {}
+            }
+
+            ColumnLayout {
+                anchors.left: artH.right
+                anchors.right: controlsH.left
+                anchors.leftMargin: root.dotMargin * 0.6
+                anchors.rightMargin: root.dotMargin * 0.3
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+
+                Item {
+                    Layout.fillWidth: true
+                    implicitHeight: titleH.implicitHeight
+                    clip: true
+                    MarqueeText {
+                        id: titleH
+                        width: parent.width
+                        text: root.finalTitle
+                        fontSize: root.textSizeL
+                        fontWeight: Font.DemiBold
+                        textColor: Appearance.colors.colOnLayer0
+                        running: root.mediaHovered && text.length > root.marqueeRunningThreshold
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    implicitHeight: artistH.implicitHeight
+                    clip: true
+                    StyledText {
+                        id: artistH
+                        width: parent.width
+                        text: root.finalArtist
+                        font.pixelSize: root.textSizeS
+                        font.weight: Font.Normal
+                        color: Appearance.colors.colSubtext
+                    }
+                }
+            }
         }
+    }
+    
+    Loader {
+        active: root.isVertical
+        anchors.fill: parent
+        sourceComponent: Item {
+            anchors.fill: parent
 
-        Row {
-            id: controlsH
-            anchors.right: parent.right
-            anchors.rightMargin: root.dotMargin * 0.4
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 0
+            ArtworkItem {
+                id: artV
+                anchors.top: parent.top
+                anchors.topMargin: root.dotMargin + musicSepWrapper.Layout.preferredHeight
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
 
-            PlayButton {}
-            NextButton {}
-        }
+            Column {
+                id: controlsV
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: root.dotMargin * 0.6
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 0
 
-        ColumnLayout {
-            anchors.left: artH.right
-            anchors.right: controlsH.left
-            anchors.leftMargin: root.dotMargin * 0.6
-            anchors.rightMargin: root.dotMargin * 0.3
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
+                PlayButton {}
+                NextButton {}
+            }
 
-            Item {
-                Layout.fillWidth: true
-                implicitHeight: titleH.implicitHeight
-                clip: true
+            ColumnLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: artV.bottom
+                anchors.topMargin: root.dotMargin 
+                anchors.leftMargin: root.dotMargin
+                anchors.rightMargin: root.dotMargin
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: Math.round((artV.height - controlsV.height) / 2)
+                spacing: 2
+
                 MarqueeText {
-                    id: titleH
-                    width: parent.width
+                    id: titleV
+                    Layout.fillWidth: true
                     text: root.finalTitle
                     fontSize: root.textSizeL
                     fontWeight: Font.DemiBold
                     textColor: Appearance.colors.colOnLayer0
-                    running: root.mediaHovered
+                    running: root.mediaHovered && text.length > root.marqueeRunningThreshold
                 }
-            }
 
-            Item {
-                Layout.fillWidth: true
-                implicitHeight: artistH.implicitHeight
-                clip: true
-                MarqueeText {
-                    id: artistH
-                    width: parent.width
+                StyledText {
+                    id: artistV
+                    Layout.fillWidth: true
                     text: root.finalArtist
-                    fontSize: root.textSizeS
-                    fontWeight: Font.Normal
-                    textColor: Appearance.colors.colSubtext
-                    running: root.mediaHovered
+                    font.pixelSize: root.textSizeS
+                    font.weight: Font.Normal
+                    color: Appearance.colors.colSubtext
                 }
             }
         }
     }
-
-    // ── Vertical layout ───────────────────────────────────────────────────
-    Item {
-        visible: root.isVertical
-        anchors.fill: parent
-
-        ArtworkItem {
-            id: artV
-            anchors.top: parent.top
-            anchors.topMargin: root.dotMargin + musicSepWrapper.Layout.preferredHeight
-            anchors.horizontalCenter: parent.horizontalCenter
-        }
-
-        Column {
-            id: controlsV
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: root.dotMargin * 0.6
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 0
-
-            PlayButton {}
-            NextButton {}
-        }
-
-        ColumnLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: artV.bottom
-            anchors.topMargin: root.dotMargin 
-            anchors.leftMargin: root.dotMargin
-            anchors.rightMargin: root.dotMargin
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: Math.round((artV.height - controlsV.height) / 2)
-            spacing: 2
-
-            MarqueeText {
-                id: titleV
-                Layout.fillWidth: true
-                text: root.finalTitle
-                fontSize: root.textSizeL
-                fontWeight: Font.DemiBold
-                textColor: Appearance.colors.colOnLayer0
-                running: root.mediaHovered
-            }
-
-            MarqueeText {
-                id: artistV
-                Layout.fillWidth: true
-                text: root.finalArtist
-                fontSize: root.textSizeS
-                fontWeight: Font.Normal
-                textColor: Appearance.colors.colSubtext
-                running: root.mediaHovered
-            }
-        }
-    }
+    
 }
