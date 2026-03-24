@@ -5,6 +5,9 @@ mkdir -p "$(dirname "$STATE_FILE")"
 
 LAST_STATE=""
 
+cleanup() { echo "NONE" > "$STATE_FILE"; exit 0; }
+trap cleanup EXIT INT TERM
+
 while true; do
 
     apps=$(pw-dump | jq -r '.[] | select((.info.props."media.class" == "Stream/Input/Video" or .info.props."media.role" == "Screen") and .info.state == "running") | .info.props["node.name"]' | paste -sd ", " -)

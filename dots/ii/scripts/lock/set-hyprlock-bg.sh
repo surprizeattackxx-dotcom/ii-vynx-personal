@@ -11,10 +11,11 @@ if [[ -z "$IMG" || ! -f "$IMG" ]]; then
 fi
 
 # Replace or insert path= inside the first background { } block
+ESCAPED_IMG=$(printf '%s\n' "$IMG" | sed 's/[&/\]/\\&/g')
 if grep -q "^\s*path\s*=" "$CONF"; then
-    sed -i "s|^\(\s*\)path\s*=.*|\1path = $IMG|" "$CONF"
+    sed -i "s|^\(\s*\)path\s*=.*|\1path = ${ESCAPED_IMG}|" "$CONF"
 else
-    sed -i "s|^\(\s*\)color\s*=.*|\1path = $IMG|" "$CONF"
+    sed -i "s|^\(\s*\)color\s*=.*|\1path = ${ESCAPED_IMG}|" "$CONF"
 fi
 
 echo "Hyprlock background set to: $IMG"

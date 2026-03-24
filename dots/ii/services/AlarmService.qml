@@ -32,6 +32,7 @@ Singleton {
     function snoozeAlarm(id) {
         const alarm = alarms.find(a => a.id === id)
         if (!alarm) return
+        removeAlarm(id)
         addAlarm(alarm.label, Date.now() + 10 * 60 * 1000, alarm.repeat)
     }
 

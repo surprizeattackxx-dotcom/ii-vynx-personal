@@ -52,7 +52,7 @@ ColumnLayout {
                 Qt.callLater(() => {
                     const [renderHash, isNew] = LatexRenderer.requestRender(expression.trim());
                     if (!renderedLatexHashes.includes(renderHash)) {
-                        renderedLatexHashes.push(renderHash);
+                        renderedLatexHashes = [...renderedLatexHashes, renderHash];
                     }
                 });
             }
@@ -116,8 +116,12 @@ ColumnLayout {
             // Split by either double newlines or single newlines in a list
             values: root.fadeChunkSplitting ? root.shownText.split(/\n\n(?= {0,2})|\n(?= {0,2}[-\*])/g).filter(line => line.trim() !== "") : [root.shownText]
             onValuesChanged: {
-                while (textLinesRepeater.textLineOpacities.length < values.length) {
-                    textLinesRepeater.textLineOpacities.push(root.messageData.done ? 1 : 0);
+                if (textLinesRepeater.textLineOpacities.length < values.length) {
+                    let newOpacities = [...textLinesRepeater.textLineOpacities];
+                    while (newOpacities.length < values.length) {
+                        newOpacities.push(root.messageData.done ? 1 : 0);
+                    }
+                    textLinesRepeater.textLineOpacities = newOpacities;
                 }
             }
         }
@@ -133,7 +137,9 @@ ColumnLayout {
                 target: root.messageData
                 function onDoneChanged() {
                     if (root.messageData.done) {
-                        textLinesRepeater.textLineOpacities[textArea.index] = 1
+                        let o = [...textLinesRepeater.textLineOpacities];
+                        o[textArea.index] = 1;
+                        textLinesRepeater.textLineOpacities = o;
                     }
                 }
             }
@@ -141,7 +147,9 @@ ColumnLayout {
                 target: textLinesRepeater.model
                 function onValuesChanged() {
                     if (textLinesRepeater.model.values.length > textArea.index + 1) {
-                        textLinesRepeater.textLineOpacities[textArea.index] = 1
+                        let o = [...textLinesRepeater.textLineOpacities];
+                        o[textArea.index] = 1;
+                        textLinesRepeater.textLineOpacities = o;
                     }
                 }
             }

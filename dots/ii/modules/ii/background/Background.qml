@@ -163,13 +163,9 @@ Variants {
 
         readonly property var monitorWidgetPositions: {
             const raw = widgetStateFile.text();
-            console.log("[widget-pos]", bgRoot.monitor.name, "raw JSON:", raw);
             try {
-                const parsed = JSON.parse(raw) ?? {};
-                console.log("[widget-pos]", bgRoot.monitor.name, "clock pos:", JSON.stringify(parsed.clock));
-                return parsed;
+                return JSON.parse(raw) ?? {};
             } catch (e) {
-                console.log("[widget-pos]", bgRoot.monitor.name, "parse error:", e);
                 return {};
             }
         }

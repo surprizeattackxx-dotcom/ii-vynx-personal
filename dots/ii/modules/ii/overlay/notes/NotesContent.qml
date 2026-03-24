@@ -464,6 +464,9 @@ OverlayBackground {
                 };
             }
             
+            if (root.currentTabIndex >= root.tabsData.tabs.length) {
+                root.currentTabIndex = Math.max(0, root.tabsData.tabs.length - 1);
+            }
             loadTabContent(root.currentTabIndex);
             
             if (pendingReload) {

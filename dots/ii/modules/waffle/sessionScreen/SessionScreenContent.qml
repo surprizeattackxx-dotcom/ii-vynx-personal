@@ -63,7 +63,7 @@ Item {
                 GlobalStates.sessionOpen = false;
                 Session.launchTaskManager();
             }
-            KeyNavigation.up: signOutButton
+            KeyNavigation.up: changePasswordButton
             KeyNavigation.down: cancelButton
         }
 

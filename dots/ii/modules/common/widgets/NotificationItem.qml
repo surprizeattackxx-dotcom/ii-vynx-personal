@@ -33,7 +33,7 @@ Item { // Notification item area
     implicitHeight: background.implicitHeight
 
     function destroyWithAnimation(left = false) {
-        root.qmlParent.resetDrag()
+        root.qmlParent?.resetDrag()
         background.anchors.leftMargin = background.anchors.leftMargin; // Break binding
         destroyAnimation.left = left;
         destroyAnimation.running = true;

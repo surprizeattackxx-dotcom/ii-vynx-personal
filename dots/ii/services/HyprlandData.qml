@@ -83,13 +83,18 @@ Singleton {
         updateAll();
     }
 
+    Timer {
+        id: debounceTimer
+        interval: 20
+        onTriggered: updateAll()
+    }
+
     Connections {
         target: Hyprland
 
         function onRawEvent(event) {
-            // console.log("Hyprland raw event:", event.name);
             if (["openlayer", "closelayer", "screencast"].includes(event.name)) return;
-            updateAll()
+            debounceTimer.restart()
         }
     }
 
@@ -99,7 +104,9 @@ Singleton {
         stdout: StdioCollector {
             id: clientsCollector
             onStreamFinished: {
-                root.windowList = JSON.parse(clientsCollector.text)
+                try {
+                    root.windowList = JSON.parse(clientsCollector.text)
+                } catch (e) { return; }
                 let tempWinByAddress = {};
                 for (var i = 0; i < root.windowList.length; ++i) {
                     var win = root.windowList[i];
@@ -117,7 +124,7 @@ Singleton {
         stdout: StdioCollector {
             id: monitorsCollector
             onStreamFinished: {
-                root.monitors = JSON.parse(monitorsCollector.text);
+                try { root.monitors = JSON.parse(monitorsCollector.text); } catch (e) {}
             }
         }
     }
@@ -128,7 +135,7 @@ Singleton {
         stdout: StdioCollector {
             id: layersCollector
             onStreamFinished: {
-                root.layers = JSON.parse(layersCollector.text);
+                try { root.layers = JSON.parse(layersCollector.text); } catch (e) {}
             }
         }
     }
@@ -139,7 +146,8 @@ Singleton {
         stdout: StdioCollector {
             id: workspacesCollector
             onStreamFinished: {
-                var rawWorkspaces = JSON.parse(workspacesCollector.text);
+                var rawWorkspaces;
+                try { rawWorkspaces = JSON.parse(workspacesCollector.text); } catch (e) { return; }
                 // Filter out invalid workspace ids (e.g. lock-screen temp workspace 2147483647 - N)
                 root.workspaces = rawWorkspaces.filter(ws => ws.id >= 1 && ws.id <= 100);
                 let tempWorkspaceById = {};
@@ -159,7 +167,7 @@ Singleton {
         stdout: StdioCollector {
             id: activeWorkspaceCollector
             onStreamFinished: {
-                root.activeWorkspace = JSON.parse(activeWorkspaceCollector.text);
+                try { root.activeWorkspace = JSON.parse(activeWorkspaceCollector.text); } catch (e) {}
             }
         }
     }

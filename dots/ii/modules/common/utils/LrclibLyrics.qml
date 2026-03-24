@@ -517,19 +517,6 @@ Item {
                         return;
                     }
 
-                    root.loading = false;
-                    root.error = root.lines.length === 0 && root.instrumental ? "Instrumental" : "";
-                    root.loadedKey = requestKey;
-
-                    root.instrumental = best.instrumental ?? false;
-                    root.lines = root.parseSyncedLyrics(best.syncedLyrics ?? "");
-
-                    if (root.lines.length === 0 && !root.instrumental) {
-                        root.attempt += 1;
-                        root.fetchAttempt(requestId);
-                        return;
-                    }
-
                     root.setCache(root.queryTitle, root.queryArtist, root.queryDuration, {
                         instrumental: root.instrumental,
                         lines: root.lines

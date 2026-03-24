@@ -129,7 +129,7 @@ Singleton {
         //https://gist.github.com/0x263b/2bdd90886c2036a1ad5bcf06d6e6fb37
         let hash = 0;
         if (str.length === 0)
-            return hash;
+            return "#000000";
 
         for (var i = 0; i < str.length; i++) {
             hash = str.charCodeAt(i) + ((hash << 5) - hash);

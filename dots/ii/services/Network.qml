@@ -121,7 +121,8 @@ Singleton {
             }
         }
         onExited: (exitCode, exitStatus) => {
-            root.wifiConnectTarget.askingPassword = (exitCode !== 0)
+            if (root.wifiConnectTarget)
+                root.wifiConnectTarget.askingPassword = (exitCode !== 0)
             root.wifiConnectTarget = null
         }
     }
@@ -165,8 +166,14 @@ Singleton {
         running: true
         command: ["nmcli", "monitor"]
         stdout: SplitParser {
-            onRead: root.update()
+            onRead: subscriberDebounce.restart()
         }
+    }
+
+    Timer {
+        id: subscriberDebounce
+        interval: 200
+        onTriggered: root.update()
     }
 
     Process {
@@ -304,11 +311,12 @@ Singleton {
 
                 const wifiNetworks = Array.from(networkMap.values());
 
-                const rNetworks = root.wifiNetworks;
+                let rNetworks = [...root.wifiNetworks];
 
                 const destroyed = rNetworks.filter(rn => !wifiNetworks.find(n => n.frequency === rn.frequency && n.ssid === rn.ssid && n.bssid === rn.bssid));
                 for (const network of destroyed)
-                    rNetworks.splice(rNetworks.indexOf(network), 1).forEach(n => n.destroy());
+                    network.destroy();
+                rNetworks = rNetworks.filter(rn => !destroyed.includes(rn));
 
                 for (const network of wifiNetworks) {
                     const match = rNetworks.find(n => n.frequency === network.frequency && n.ssid === network.ssid && n.bssid === network.bssid);
@@ -320,6 +328,7 @@ Singleton {
                         }));
                     }
                 }
+                root.wifiNetworks = rNetworks;
             }
         }
     }

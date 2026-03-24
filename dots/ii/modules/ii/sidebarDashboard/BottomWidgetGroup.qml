@@ -25,6 +25,7 @@ Rectangle {
     property bool collapsed: Persistent.states.sidebar.bottomGroup.collapsed
     property var tabs: [
         { "type": "calendar", "name": Translation.tr("Calendar"), "icon": "calendar_month", "widget": "calendar/CalendarWidget.qml" },
+        { "type": "agenda",   "name": Translation.tr("Agenda"),   "icon": "today",           "widget": "calendar/TodayAgendaWidget.qml" },
         { "type": "todo",     "name": Translation.tr("To Do"),    "icon": "done_outline",   "widget": "todo/TodoWidget.qml" },
         { "type": "timer",    "name": Translation.tr("Timer"),    "icon": "schedule",        "widget": "pomodoro/PomodoroWidget.qml" },
     ]
@@ -184,9 +185,9 @@ Rectangle {
                 Connections {
                     target: root
                     function onSelectedTabChanged() {
-                        if (root.currentTab > root.previousIndex)
+                        if (root.selectedTab > root.previousIndex)
                             tabSwitchBehavior.animation.down = true;
-                        else if (root.currentTab < root.previousIndex)
+                        else if (root.selectedTab < root.previousIndex)
                             tabSwitchBehavior.animation.down = false;
                         tabStack.source = root.tabs[root.selectedTab].widget;
                     }

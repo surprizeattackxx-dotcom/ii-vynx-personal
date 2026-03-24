@@ -99,13 +99,15 @@ if pgrep wf-recorder > /dev/null; then
     updatestate false
     pkill wf-recorder &
 else
+    RECORDING_DATE="$(getdate)"
+    RECORDING_FILE="./recording_${RECORDING_DATE}.mp4"
     if [[ $FULLSCREEN_FLAG -eq 1 ]]; then
-        notify-send "Starting recording" 'recording_'"$(getdate)"'.mp4' -a 'Recorder' & disown
+        notify-send "Starting recording" "recording_${RECORDING_DATE}.mp4" -a 'Recorder' & disown
         updatestate true
         if [[ $SOUND_FLAG -eq 1 ]]; then
-            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f './recording_'"$(getdate)"'.mp4' --audio="$(getaudiooutput)"
+            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f "$RECORDING_FILE" --audio="$(getaudiooutput)"
         else
-            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f './recording_'"$(getdate)"'.mp4' 
+            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f "$RECORDING_FILE"
         fi
     else
         # If a manual region was provided via --region, use it; otherwise run slurp as before.
@@ -125,13 +127,12 @@ else
         y="${pos#*,}"
         geometry="${x},${y} ${size}"
 
-        notify-send "Starting recording" 'recording_'"$(getdate)"'.mp4' -a 'Recorder' & disown
+        notify-send "Starting recording" "recording_${RECORDING_DATE}.mp4" -a 'Recorder' & disown
         updatestate true
         if [[ $SOUND_FLAG -eq 1 ]]; then
-            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f './recording_'"$(getdate)"'.mp4'  --geometry "$geometry" --audio="$(getaudiooutput)"
+            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f "$RECORDING_FILE" --geometry "$geometry" --audio="$(getaudiooutput)"
         else
-            # echo "SCRIPT DEBUG: wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f './recording_'"$(getdate)"'.mp4'  --geometry "$geometry"" >> /tmp/region-record.log
-            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f './recording_'"$(getdate)"'.mp4'  --geometry "$geometry"
+            wf-recorder -o "$(getactivemonitor)" --pixel-format yuv420p -f "$RECORDING_FILE" --geometry "$geometry"
         fi
     fi
 fi

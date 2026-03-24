@@ -25,18 +25,19 @@ ShellRoot {
     Process {
         id: listProcess
         running: true
-        command: ["/home/donnie/.config/hypr/scripts/Animations.sh", "list"]
+        command: [Quickshell.env("HOME") + "/.config/hypr/scripts/Animations.sh", "list"]
         stdout: StdioCollector {
+            id: animListStdout
             onStreamFinished: {
-                const raw = this.text.trim()
+                const raw = animListStdout.text.trim()
+                if (!raw)
+                    return
                 presetsModel.clear()
-                if (raw) {
-                    raw.split("\n").forEach(line => {
-                        const name = line.trim()
-                        if (name.length > 0)
-                            presetsModel.append({ "name": name })
-                    })
-                }
+                raw.split("\n").forEach(line => {
+                    const name = line.trim()
+                    if (name.length > 0)
+                        presetsModel.append({ "name": name })
+                })
             }
         }
     }
@@ -47,7 +48,7 @@ ShellRoot {
     property string activePreset: ""
 
     function applyAnimation(preset) {
-        applyProcess.command = ["/home/donnie/.config/hypr/scripts/Animations.sh", "apply", preset]
+        applyProcess.command = [Quickshell.env("HOME") + "/.config/hypr/scripts/Animations.sh", "apply", preset]
         applyProcess.running = true
         root.activePreset = preset
         animationsWindow.visible = false

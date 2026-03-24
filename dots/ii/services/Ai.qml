@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 
 import qs.modules.common.functions as CF
 import qs.modules.common
+import qs.services
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -10,10 +11,9 @@ import QtQuick
 import qs.services.ai
 
 /**
- * Basic service to handle LLM chats. Supports Google's and OpenAI's API formats.
- * Supports Gemini and OpenAI models.
- * Limitations:
- * - For now functions only work with Gemini API format
+ * LLM chat service. API formats:
+ * - `openai`: OpenAI Chat Completions (also used for Ollama, OpenRouter, Mistral — all OpenAI-compatible).
+ * - `gemini`: Google Gemini `streamGenerateContent`.
  */
 Singleton {
     id: root
@@ -22,7 +22,6 @@ Singleton {
     property Component aiModelComponent: AiModel {}
     property Component geminiApiStrategy: GeminiApiStrategy {}
     property Component openaiApiStrategy: OpenAiApiStrategy {}
-    property Component mistralApiStrategy: MistralApiStrategy {}
     readonly property string interfaceRole: "interface"
     readonly property string apiKeyEnvVarName: "API_KEY"
 
@@ -56,6 +55,281 @@ Singleton {
     // property var messages: []
     property var messageIDs: []
     property var messageByID: ({})
+
+    // ── Multi-agent state ──────────────────────────────────────────────────────
+    property string activeAgentType: ""       // "" = Aria (coordinator) mode
+    property string _pendingAgentResult: ""   // set by return_result, consumed by markDone
+    property bool _pendingDesktopAction: false // true while commandExecutionProc runs a desktop action — suppresses premature requestRestoreSidebars
+    property var agentCallStack: []           // [{parentAgentType, toolCallId, savedCalls}]
+    property var agentMsgIDs: ({})            // agentType -> [id, ...]
+    property var agentMsgByID: ({})           // id -> AiMessageData (agent-private, not in UI)
+
+    // Default cloud model for agent escalation — used when local model delegates via call_agent
+    readonly property string agentCloudModel: "minimax-m2.7:cloud"
+
+    readonly property var agentDefs: ({
+        "desktop": {
+            displayName: "Vector",
+            emoji: "🖥️",
+            useCloudModel: true,
+            systemPrompt: "You are Vector, a desktop automation specialist on a Linux/Wayland desktop (Hyprland, 3 monitors). Your job: control the desktop by taking screenshots, clicking UI elements, typing text, scrolling, and launching apps. Always take a screenshot first to see current state. Work step by step, verify each action. When your task is complete, call return_result with a clear summary.",
+            toolNames: ["run_task", "take_screenshot", "click_at", "click_cell", "type_text", "press_key",
+                        "scroll", "drag_to", "hover", "launch_app", "kill_process", "open_file", "capture_region",
+                        "ocr_region", "read_clipboard_text", "write_clipboard", "read_clipboard_image",
+                        "read_screen_text", "manage_tabs", "wait_and_screenshot",
+                        "control_hyprland", "return_result"]
+        },
+        "research": {
+            displayName: "Scout",
+            emoji: "🔍",
+            useCloudModel: true,
+            systemPrompt: "You are Scout, a research specialist. Your job: search the web, read URLs, and gather accurate information. Be thorough and cite sources. ALWAYS end by calling return_result with your findings — never produce a plain text response without calling return_result first.\n\nIMPORTANT: For any news request (headlines, NPR, BBC, current events), ALWAYS use get_news. Do NOT use read_url for news — most news sites require JavaScript and read_url will return empty results.\n\nFor JavaScript-heavy sites (YouTube, Google, Twitter, Reddit), read_url will return 0 elements — use web_search instead to find URLs and information, then return_result with what you found.",
+            toolNames: ["get_news", "web_search", "read_url", "execute_js", "search_app", "calculate", "rag_search", "return_result"]
+        },
+        "system": {
+            displayName: "Forge",
+            emoji: "⚙️",
+            useCloudModel: true,
+            systemPrompt: "You are Forge, a system administration specialist on Linux. Your job: execute shell commands, manage processes, control media, interact with Hyprland, and modify shell config. Be careful with destructive commands. When your task is complete, call return_result with the outcome.",
+            toolNames: ["run_task", "run_shell_command", "get_system_logs", "control_media", "control_hyprland",
+                        "get_shell_config", "set_shell_config", "calculate", "workspace_layout", "return_result"]
+        },
+        "personal": {
+            displayName: "Sage",
+            emoji: "📚",
+            useCloudModel: true,
+            systemPrompt: "You are Sage, a personal assistant specialist. Your job: manage memory, notes, todos, timers, and scheduled tasks. Organise information clearly. When your task is complete, call return_result with a summary.",
+            toolNames: ["remember", "memory_file", "search_memory", "manage_notes",
+                        "create_todo", "set_timer", "schedule_task", "kg_store", "kg_query", "calendar", "return_result"]
+        }
+    })
+
+    // Injected tool definitions (not in static tools property — added dynamically by getActiveTools)
+    readonly property var _callAgentDefGemini: ({
+        "name": "call_agent",
+        "description": "Delegate a task to a specialist agent. Vector=desktop UI/clicking, Scout=deep web research only, Forge=system/shell, Sage=memory/notes/todos. Do NOT use Scout for browser interaction — use execute_js directly. Do NOT use for news (get_news), music (play_music), apps (run_task/open_app), or anything you can do yourself with available tools.",
+        "parameters": { "type": "object", "properties": {
+            "agent": { "type": "string", "description": "Agent type: 'desktop' (Vector), 'research' (Scout), 'system' (Forge), 'personal' (Sage)" },
+            "task":  { "type": "string", "description": "Complete self-contained task description with all required context" }
+        }, "required": ["agent", "task"] }
+    })
+    readonly property var _callAgentDefOai: ({
+        "type": "function", "function": {
+            "name": "call_agent",
+            "description": "Delegate a task to a specialist agent. Vector=desktop UI/clicking, Scout=deep web research only, Forge=system/shell, Sage=memory/notes/todos. Do NOT use Scout for browser interaction — use execute_js directly. Do NOT use for news (get_news), music (play_music), apps (run_task/open_app), or anything you can do yourself with available tools.",
+            "parameters": { "type": "object", "properties": {
+                "agent": { "type": "string", "description": "Agent type: 'desktop' (Vector), 'research' (Scout), 'system' (Forge), 'personal' (Sage)" },
+                "task":  { "type": "string", "description": "Complete self-contained task description with all required context" }
+            }, "required": ["agent", "task"] }
+        }
+    })
+    readonly property var _returnResultDefGemini: ({
+        "name": "return_result",
+        "description": "Signal task completion and return the result to Aria (coordinator). Call this when your task is fully done.",
+        "parameters": { "type": "object", "properties": {
+            "result": { "type": "string", "description": "Clear summary of what was accomplished or the answer found" }
+        }, "required": ["result"] }
+    })
+    readonly property var _returnResultDefOai: ({
+        "type": "function", "function": {
+            "name": "return_result",
+            "description": "Signal task completion and return the result to Aria (coordinator). Call this when your task is fully done.",
+            "parameters": { "type": "object", "properties": {
+                "result": { "type": "string", "description": "Clear summary of what was accomplished or the answer found" }
+            }, "required": ["result"] }
+        }
+    })
+
+    // ── Auto-routing tool system ──────────────────────────────────────────────
+    // Instead of forcing model to delegate via call_agent, the code detects
+    // intent from the user message and gives the model only relevant tools.
+    // Small models get focused subsets; cloud/large models get everything.
+
+    property string _lastUserMessageText: ""
+
+    // Tool sets by intent category
+    readonly property var _toolSets: ({
+        "desktop": ["take_screenshot", "click_at", "click_cell", "type_text", "press_key",
+                     "scroll", "drag_to", "hover", "launch_app", "open_file", "wait_for_app",
+                     "wait_and_screenshot", "manage_tabs", "read_screen_text"],
+        "media":   ["play_music", "control_media"],
+        "research":["web_search", "read_url", "get_news", "calculate"],
+        "memory":  ["remember", "search_memory", "forget_memory"],
+        "system":  ["run_shell_command", "control_hyprland", "kill_process", "get_system_logs"],
+        "comms":   ["notify", "speak", "send_message"],
+        "clipboard":["read_clipboard_text", "write_clipboard"],
+        // Advanced tools — only for large/cloud models
+        "advanced":["execute_js", "search_app", "capture_region", "ocr_region",
+                    "read_clipboard_image", "memory_file", "kg_store", "kg_query",
+                    "rag_search", "rag_index", "schedule_task", "set_timer",
+                    "create_todo", "manage_notes", "get_notifications", "reply_notification",
+                    "control_system", "get_shell_config", "set_shell_config",
+                    "workspace_layout", "open_app", "run_task", "calendar",
+                    "pick_color", "export_chat", "call_agent", "show_plan"]
+    })
+
+    // Intent detection keywords
+    readonly property var _intentKeywords: ({
+        "desktop": ["screenshot", "screen", "click", "drag", "open ", "launch", "close ",
+                     "tab", "hover", "scroll", "type ", "press ", "file manager", "browser",
+                     "window", "app", "application", "desktop"],
+        "media":   ["music", "play ", "song", "spotify", "pause", "skip", "shuffle",
+                     "next song", "previous", "volume", "queue", "playlist", "album",
+                     "artist", "track", "listen"],
+        "research":["search", "look up", "find ", "what is", "what are", "who is",
+                     "how to", "why ", "news", "article", "website", "url", "google",
+                     "calculate", "math"],
+        "memory":  ["remember", "recall", "forget", "memory", "you know", "last time",
+                     "previously"],
+        "system":  ["command", "terminal", "shell", "logs", "process", "kill ",
+                     "workspace", "monitor", "volume", "brightness", "shutdown",
+                     "reboot", "restart"],
+        "comms":   ["notify", "notification", "speak", "say ", "tell ", "message",
+                     "send ", "text "],
+        "clipboard":["clipboard", "copy", "paste", "copied"]
+    })
+
+    // Detect model tier: "small" (<14B local), "medium" (14-30B local), "large" (cloud or 30B+)
+    function _getModelTier() {
+        const provider = root.currentModelId || "";
+        // Cloud providers are always "large"
+        if (provider === "openrouter" || provider === "google" || provider === "mistral") return "large";
+        // Ollama: parse model name for size hints
+        const modelName = (root.currentModel || "").toLowerCase();
+        // Check for size indicators in model name
+        const sizeMatch = modelName.match(/(\d+)b/);
+        if (sizeMatch) {
+            const paramB = parseInt(sizeMatch[1]);
+            if (paramB >= 30) return "large";
+            if (paramB >= 14) return "medium";
+            return "small";
+        }
+        // No size in name — assume small for safety
+        return "small";
+    }
+
+    // Detect intents from user message
+    function _detectIntents(message) {
+        const msg = message.toLowerCase();
+        const detected = [];
+        const intentKeys = Object.keys(root._intentKeywords);
+        for (let i = 0; i < intentKeys.length; i++) {
+            const intent = intentKeys[i];
+            const keywords = root._intentKeywords[intent];
+            for (let k = 0; k < keywords.length; k++) {
+                if (msg.includes(keywords[k])) {
+                    detected.push(intent);
+                    break; // One match per intent is enough
+                }
+            }
+        }
+        // Default: if nothing detected, give desktop + research (most common)
+        if (detected.length === 0) detected.push("desktop", "research");
+        return detected;
+    }
+
+    // Build tool list based on intent + model tier
+    function _getToolsForContext() {
+        const tier = root._getModelTier();
+
+        // Large models get everything — no filtering
+        if (tier === "large") return null; // null = no filtering
+
+        const intents = root._detectIntents(root._lastUserMessageText);
+        let toolNames = [];
+
+        // Collect tools from detected intents
+        for (let i = 0; i < intents.length; i++) {
+            const intentTools = root._toolSets[intents[i]];
+            if (intentTools) {
+                for (let t = 0; t < intentTools.length; t++) {
+                    if (toolNames.indexOf(intentTools[t]) === -1) toolNames.push(intentTools[t]);
+                }
+            }
+        }
+
+        // Medium models also get clipboard + advanced subset
+        if (tier === "medium") {
+            const extras = root._toolSets["clipboard"].concat([
+                "run_task", "open_app", "show_plan", "execute_js", "search_app",
+                "control_system", "workspace_layout", "call_agent"
+            ]);
+            for (let e = 0; e < extras.length; e++) {
+                if (toolNames.indexOf(extras[e]) === -1) toolNames.push(extras[e]);
+            }
+        }
+
+        // Always include clipboard for small models too (very useful)
+        const clip = root._toolSets["clipboard"];
+        for (let c = 0; c < clip.length; c++) {
+            if (toolNames.indexOf(clip[c]) === -1) toolNames.push(clip[c]);
+        }
+
+        return toolNames;
+    }
+
+    function getActiveTools(apiFormat) {
+        const isGemini = (apiFormat === "gemini");
+
+        // Sub-agent mode: filter to agent's tool subset + inject return_result
+        if (root.activeAgentType) {
+            const agentDef = root.agentDefs[root.activeAgentType];
+            if (!agentDef) return root.tools[apiFormat]["none"] || [];
+            const toolNames = agentDef.toolNames;
+            const allFunctions = root.tools[apiFormat]["functions"];
+            if (isGemini) {
+                const allDecls = allFunctions[0]?.functionDeclarations || [];
+                const filtered = allDecls.filter(t => toolNames.includes(t.name));
+                return [{ functionDeclarations: [...filtered, root._returnResultDefGemini] }];
+            }
+            const filtered = (allFunctions || []).filter(t => toolNames.includes(t.function?.name || t.name));
+            return [...filtered, root._returnResultDefOai];
+        }
+
+        // Coordinator mode
+        const base = root.tools[apiFormat][root.currentTool];
+        if (root.currentTool !== "functions") return base;
+
+        // Get context-aware tool filter
+        const allowedTools = root._getToolsForContext();
+
+        // All tiers get call_agent — small/medium models can escalate to cloud
+        if (isGemini) {
+            let decls = base[0]?.functionDeclarations || [];
+            if (allowedTools !== null) {
+                decls = decls.filter(t => allowedTools.includes(t.name));
+            }
+            return [{ functionDeclarations: [...decls, root._callAgentDefGemini] }];
+        }
+
+        let filtered = base;
+        if (allowedTools !== null) {
+            filtered = base.filter(t => allowedTools.includes(t.function?.name || t.name));
+        }
+        return [...filtered, root._callAgentDefOai];
+    }
+
+    function _finalizeCurrentAgent(result) {
+        if (root.agentCallStack.length === 0) return;
+        const frame = root.agentCallStack[root.agentCallStack.length - 1];
+        root.agentCallStack = root.agentCallStack.slice(0, -1);
+        const agentType = root.activeAgentType;
+        const agentDisplay = root.agentDefs[agentType]?.displayName || agentType;
+        // Clean up agent message objects
+        const ids = root.agentMsgIDs[agentType] || [];
+        for (const id of ids) { delete root.agentMsgByID[id]; }
+        const newAgentMsgIDs = Object.assign({}, root.agentMsgIDs);
+        delete newAgentMsgIDs[agentType];
+        root.agentMsgIDs = newAgentMsgIDs;
+        // Restore parent context
+        root.activeAgentType = frame.parentAgentType;
+        root.consecutiveToolCalls = frame.savedCalls;
+        // Inject result into parent (coordinator) context
+        root._pendingToolCallId = frame.toolCallId;
+        root.addFunctionOutputMessage("call_agent", `[${agentDisplay}]: ${result}`);
+        requester.makeRequest();
+    }
+    // ── End multi-agent ────────────────────────────────────────────────────────
     readonly property var apiKeys: KeyringStorage.keyringData?.apiKeys ?? {}
     readonly property var apiKeysLoaded: KeyringStorage.loaded
     readonly property bool currentModelHasApiKey: {
@@ -89,6 +363,7 @@ Singleton {
 
     property string openWindowsList: ""
     property string currentMediaTitle: ""
+    property string activityContext: ""
 
     property var promptSubstitutions: {
         "{DISTRO}": SystemInfo.distroName,
@@ -99,6 +374,7 @@ Singleton {
         "{DE}": `${SystemInfo.desktopEnvironment} (${SystemInfo.windowingSystem})`,
         "{OPENWINDOWS}": root.openWindowsList,
         "{CURRENTMEDIA}": root.currentMediaTitle,
+        "{ACTIVITY}": root.activityContext,
     }
 
     property string aiMemoryContent: ""
@@ -110,11 +386,75 @@ Singleton {
     }
 
     // Gemini: https://ai.google.dev/gemini-api/docs/function-calling
-    // OpenAI: https://platform.openai.com/docs/guides/function-calling
+    // OpenAI-compatible (Ollama, OpenRouter, Mistral, etc.): https://platform.openai.com/docs/guides/function-calling
+    // Gemini `functionDeclarations` may include extras (e.g. switch_to_search_mode) not present under tools.openai.
     property string currentTool: Config?.options.ai.tool ?? "search"
     property var tools: {
         "gemini": {
             "functions": [{"functionDeclarations": [
+                {
+                    "name": "get_news",
+                    "description": "Get current news headlines. Use for ANY news request: 'what's in the news', 'NPR today', 'latest on X'. ALWAYS use this instead of read_url for news.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "topic": { "type": "string", "description": "Topic or news source, e.g. 'NPR top stories', 'technology', 'world news'" }
+                        },
+                        "required": ["topic"]
+                    }
+                },
+                {
+                    "name": "play_music",
+                    "description": "Spotify music control. Examples: play_music(query='Yung Gravy') to play, play_music(action='shuffle') to toggle shuffle, play_music(action='like') to add current song to Liked Songs, play_music(action='unlike') to remove it. Use for ALL music requests.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "Artist, song, album, or playlist name (required for action=play)" },
+                            "action": { "type": "string", "description": "Action: 'play' (default), 'shuffle' (toggle shuffle), 'like' (add to Liked Songs), 'unlike' (remove from Liked Songs)" },
+                            "service": { "type": "string", "description": "Music service: 'spotify' (default)" }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "open_app",
+                    "description": "Launch a desktop application by name (via Open Interpreter). For multi-step in-app actions (search, open a channel, play media), use run_task with explicit steps if launch alone is not enough. Not for browser DMs — send_message is separate.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Application name, e.g. 'spotify', 'discord', 'firefox'" }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                {
+                    "name": "run_task",
+                    "description": "Execute a desktop task autonomously using Open Interpreter (AI code execution engine). Use for: opening apps, controlling Spotify/media, managing files, system control. NOT for browser interaction — use read_url + execute_js to click buttons/inputs on web pages. OI writes and runs Python/bash in a loop until done.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task": {
+                                "type": "string",
+                                "description": "What to accomplish. Be specific — include app names, search terms, file paths, etc.",
+                            },
+                        },
+                        "required": ["task"]
+                    }
+                },
+                {
+                    "name": "web_search",
+                    "description": "Search the web for current information or facts beyond your knowledge cutoff. Use for general web searches.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                },
                 {
                     "name": "switch_to_search_mode",
                     "description": "Switch to search mode to perform web searches. Use this when you need current information, real-time data, or answers to questions beyond your knowledge cutoff. After switching, continue with the user's original request.",
@@ -299,7 +639,7 @@ Singleton {
                 },
                 {
                     "name": "take_screenshot",
-                    "description": "Take a screenshot of all monitors and attach it for analysis. After receiving it, always visually analyze the full image — identify visible apps, UI elements, text, the cursor position (red crosshair), and which monitor the content is on. Never skip analyzing the image.",
+                    "description": "Take a screenshot for visual analysis ONLY. Do NOT use this to interact with apps — use run_task instead (it's faster and more reliable). Only use take_screenshot when you genuinely need to SEE what's on screen: verifying visual state, reading text/UI you can't get another way, or tasks that truly require visual feedback.",
                     "parameters": {}
                 },
                 {
@@ -340,6 +680,36 @@ Singleton {
                             "body": { "type": "string", "description": "Notification body text" }
                         },
                         "required": ["title"]
+                    }
+                },
+                {
+                    "name": "get_notifications",
+                    "description": "Read current desktop notifications — incoming messages, alerts, etc. Returns app name, sender, message body, and notification ID. Call this when user wants to reply to a message or asks what notifications they have.",
+                    "parameters": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "reply_notification",
+                    "description": "Send an inline reply to a notification (Telegram, WhatsApp, Discord, etc.). Get the notification_id from get_notifications first.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "notification_id": { "type": "number", "description": "The notificationId from get_notifications" },
+                            "message": { "type": "string", "description": "The reply text to send" }
+                        },
+                        "required": ["notification_id", "message"]
+                    }
+                },
+                {
+                    "name": "send_message",
+                    "description": "Send a message to someone on a browser-based platform. Opens the platform, waits for it to load, then automatically finds the contact and sends the message — no extra tools needed. Just call this once and it handles everything. Example: send_message(to='Alice', message='Hi, are you free tonight?', platform='facebook messenger'). Supports: facebook messenger, telegram, discord, whatsapp, instagram.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "to": { "type": "string", "description": "Recipient name or username" },
+                            "message": { "type": "string", "description": "The message to send" },
+                            "platform": { "type": "string", "description": "App to use: telegram, discord, whatsapp, email, etc." }
+                        },
+                        "required": ["to", "message", "platform"]
                     }
                 },
                 {
@@ -385,7 +755,7 @@ Singleton {
                 },
                 {
                     "name": "search_memory",
-                    "description": "Semantically search stored patterns and preferences using vector similarity. Call this at the START of any desktop task, app launch, or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                    "description": "Search stored user preferences and past experience. Use ONLY when the user explicitly asks about their own settings, history, or saved preferences. NEVER call this mid-task or before executing actions — just do the task.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -437,25 +807,29 @@ Singleton {
                 },
                 {
                     "name": "click_at",
-                    "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                    "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically. Supports double-click and modifier keys (ctrl+click for multi-select, shift+click for range select).",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
                             "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
-                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                            "double": { "type": "boolean", "description": "Double-click instead of single click (default false). Use for opening files, selecting words." },
+                            "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'. Use ctrl+click for multi-select, shift+click for range select." }
                         },
                         "required": ["x", "y"]
                     }
                 },
                 {
                     "name": "click_cell",
-                    "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically.",
+                    "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically. Supports double-click and modifier keys.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
-                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                            "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                            "double": { "type": "boolean", "description": "Double-click instead of single click (default false)" },
+                            "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'" }
                         },
                         "required": ["cell"]
                     }
@@ -497,7 +871,7 @@ Singleton {
                 },
                 {
                     "name": "search_app",
-                    "description": "Search within a specific app or service and open the results. Supports: spotify (opens in-app search), youtube, youtube_music, soundcloud, twitch, bandcamp, reddit, github, files (local filesystem). Use this when the user wants to find something inside a specific app.",
+                    "description": "Search within a specific app: youtube, reddit, github, files (local filesystem). NOT for playing music — use play_music for Spotify/music requests.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -509,7 +883,7 @@ Singleton {
                 },
                 {
                     "name": "read_url",
-                    "description": "Fetch a URL and return its interactive elements (inputs, buttons, links) with their IDs, names, and labels. Use this BEFORE taking a screenshot when you need to interact with a web page — knowing element IDs lets you use execute_js to click/focus elements precisely without visual guessing.",
+                    "description": "Browser only. Fetch a static web page and return its interactive elements (inputs, buttons, links) with their IDs. Only works on static/server-rendered pages. For JavaScript-heavy sites (YouTube, Google, Facebook, Twitter, Reddit, Instagram, etc.) skip this and use execute_js directly with CSS selectors. NOT for messaging — use send_message. NOT for desktop apps — use run_task or open_app.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -520,7 +894,7 @@ Singleton {
                 },
                 {
                     "name": "execute_js",
-                    "description": "Execute JavaScript in the currently active browser tab by injecting it through the address bar. Use element IDs from read_url to interact precisely: e.g. document.getElementById('search').click() or document.querySelector('#input').value='text'. No screenshot needed.",
+                    "description": "Browser only. Execute JavaScript in the active browser tab via the address bar. Use element IDs from read_url: e.g. document.getElementById('search').click(). NOT for desktop apps — use run_task for those. YouTube: after starting a video, turn off repeat — set document.querySelector('video').loop=false and click the loop button off if active. Then STOP (no more execute_js/take_screenshot) unless the user asked to verify; answer in text.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -564,6 +938,69 @@ Singleton {
                     }
                 },
                 {
+                    "name": "drag_to",
+                    "description": "Click and drag from one point to another. Use for sliders, rearranging items, drag-and-drop, selecting text regions, or resizing elements. Coordinates are in screenshot pixel space. Auto-screenshots after.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x1": { "type": "number", "description": "Start X position (screenshot pixels)" },
+                            "y1": { "type": "number", "description": "Start Y position (screenshot pixels)" },
+                            "x2": { "type": "number", "description": "End X position (screenshot pixels)" },
+                            "y2": { "type": "number", "description": "End Y position (screenshot pixels)" },
+                            "button": { "type": "string", "description": "Mouse button: 'left' (default) or 'right'" }
+                        },
+                        "required": ["x1", "y1", "x2", "y2"]
+                    }
+                },
+                {
+                    "name": "hover",
+                    "description": "Move the mouse to pixel coordinates without clicking. Use to reveal tooltips, dropdown menus, hover states, or preview cards. Auto-screenshots after so you can see what appeared.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                            "y": { "type": "number", "description": "Vertical pixel position in the screenshot" }
+                        },
+                        "required": ["x", "y"]
+                    }
+                },
+                {
+                    "name": "read_screen_text",
+                    "description": "OCR: read text from the screen or a specific region without the grid overlay. Faster than take_screenshot when you just need to read text (error messages, prices, status bars). Returns plain text.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number", "description": "Left edge X (screenshot pixels, optional — omit for full screen)" },
+                            "y": { "type": "number", "description": "Top edge Y (screenshot pixels, optional)" },
+                            "width": { "type": "number", "description": "Region width in pixels (optional)" },
+                            "height": { "type": "number", "description": "Region height in pixels (optional)" }
+                        }
+                    }
+                },
+                {
+                    "name": "manage_tabs",
+                    "description": "Control browser tabs. Use to switch between tabs, close tabs, or jump to a specific tab number. Works via keyboard shortcuts in the focused browser.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'next' (ctrl+tab), 'prev' (ctrl+shift+tab), 'close' (ctrl+w), 'goto' (ctrl+N), 'new' (ctrl+t), 'reopen' (ctrl+shift+t)" },
+                            "index": { "type": "integer", "description": "Tab number 1-9 for 'goto' action" }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "wait_and_screenshot",
+                    "description": "Wait a specified number of seconds then take a screenshot. Use when you need to wait for a page to load, animation to finish, or popup to appear before checking the result. Lighter than polling.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "seconds": { "type": "number", "description": "Seconds to wait (1-15, default 3)" },
+                            "reason": { "type": "string", "description": "Why you're waiting (shown in output)" }
+                        }
+                    }
+                },
+                {
                     "name": "read_clipboard_text",
                     "description": "Read text currently in the clipboard. Use to retrieve content the user has copied, or to read text staged by write_clipboard. Runs automatically.",
                     "parameters": {}
@@ -596,6 +1033,90 @@ Singleton {
                         "required": ["command", "path"]
                     }
                 },
+                {
+                    "name": "kg_store",
+                    "description": "Store structured knowledge in the knowledge graph. Creates entities (people, projects, concepts, preferences) with typed observations and relations between them. More powerful than 'remember' for interconnected facts. Use for: user preferences with context, project relationships, people and their roles, technical stack mappings.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'entity' (create/update entity), 'relation' (link two entities), 'observe' (add observations to existing entity)" },
+                            "name": { "type": "string", "description": "Entity name (for 'entity' and 'observe')" },
+                            "entity_type": { "type": "string", "description": "Entity type (for 'entity'): person, project, tool, preference, concept, location, etc." },
+                            "observations": { "type": "array", "items": { "type": "string" }, "description": "List of observations/facts about the entity" },
+                            "from_entity": { "type": "string", "description": "Source entity name (for 'relation')" },
+                            "relation": { "type": "string", "description": "Relation type in active voice (for 'relation'): 'uses', 'prefers', 'works_on', 'depends_on', etc." },
+                            "to_entity": { "type": "string", "description": "Target entity name (for 'relation')" }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "kg_query",
+                    "description": "Query the knowledge graph. Search for entities by keyword, read specific entities with their relations, or view the full graph. Use when you need structured context about the user's world — projects, preferences, relationships between things.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'search' (keyword search), 'read' (read specific entity or full graph), 'delete_entity', 'delete_relation', 'delete_observation'" },
+                            "query": { "type": "string", "description": "Search query (for 'search')" },
+                            "name": { "type": "string", "description": "Entity name (for 'read', 'delete_entity', 'delete_observation')" },
+                            "observation": { "type": "string", "description": "Observation text to remove (for 'delete_observation')" },
+                            "from_entity": { "type": "string", "description": "Source entity (for 'delete_relation')" },
+                            "relation": { "type": "string", "description": "Relation type (for 'delete_relation')" },
+                            "to_entity": { "type": "string", "description": "Target entity (for 'delete_relation')" }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "rag_search",
+                    "description": "Semantic search over the user's indexed local documents (notes, code, configs, docs). Returns the most relevant chunks with source file paths. Use when the user asks about their own files, projects, or notes, or when you need context from their local documents.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "What to search for — natural language query" },
+                            "limit": { "type": "integer", "description": "Max results to return (default 5)" }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "rag_index",
+                    "description": "Index local files or directories for semantic search via rag_search. Supports markdown, text, code files, configs. Skips hidden dirs, node_modules, etc. Re-indexing a file updates it if changed.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "File or directory path to index (e.g. '~/Documents', '~/projects/myapp')" },
+                            "extensions": { "type": "string", "description": "Comma-separated file extensions to include (e.g. '.md,.txt,.py'). Defaults to common text/code extensions." }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "calendar",
+                    "description": "Access the user's calendar (synced via Google Calendar). Check schedule, find free time, add events, search upcoming events. Use when the user asks about meetings, schedule, availability, or wants to create/find events.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'today' (today's events), 'list' (next N days), 'now' (current event), 'add' (create event), 'search' (find events by keyword), 'sync' (force sync with Google)" },
+                            "days": { "type": "integer", "description": "Number of days to list (for 'list', default 3)" },
+                            "query": { "type": "string", "description": "Search query (for 'search')" },
+                            "event_args": { "type": "string", "description": "Event arguments for 'add' in khal format: '<start> [end] <summary> [:: description]'. Example: '2026-03-23 14:00 15:00 Team standup :: Weekly sync'" }
+                        },
+                        "required": ["action"]
+                    }
+                },
+                {
+                    "name": "workspace_layout",
+                    "description": "Save and restore Hyprland window layouts across workspaces and monitors. Use when the user wants to set up a specific arrangement ('coding layout', 'streaming setup') or save their current window arrangement for later.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'save' (save current layout), 'restore' (apply saved layout), 'list' (show saved layouts), 'delete' (remove layout), 'current' (show current window arrangement)" },
+                            "name": { "type": "string", "description": "Layout name (for save/restore/delete)" }
+                        },
+                        "required": ["action"]
+                    }
+                },
             ]}],
             "search": [{
                 "google_search": {}
@@ -616,20 +1137,30 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "set_shell_config",
-                        "description": "Set a field in the desktop graphical shell config file. Must only be used after `get_shell_config`.",
+                        "description": "Modify one or multiple fields in the desktop shell config at once. CRITICAL: You MUST call get_shell_config first to see available keys - never guess key names. Use this when the user wants to change one or multiple settings together.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "key": {
-                                    "type": "string",
-                                    "description": "The key to set, e.g. `bar.borderless`. MUST NOT BE GUESSED, use `get_shell_config` to see what keys are available before setting.",
-                                },
-                                "value": {
-                                    "type": "string",
-                                    "description": "The value to set, e.g. `true`"
+                                "changes": {
+                                    "type": "array",
+                                    "description": "Array of config changes to apply",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "key": {
+                                                "type": "string",
+                                                "description": "The key to set (e.g., 'bar.borderless')"
+                                            },
+                                            "value": {
+                                                "type": "string",
+                                                "description": "The value to set"
+                                            }
+                                        },
+                                        "required": ["key", "value"]
+                                    }
                                 }
                             },
-                            "required": ["key", "value"]
+                            "required": ["changes"]
                         }
                     }
                 },
@@ -653,8 +1184,69 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "get_news",
+                        "description": "Get current news headlines. Use for ANY news request: 'what's in the news', 'NPR today', 'latest on X'. ALWAYS use this instead of read_url for news.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "topic": { "type": "string", "description": "Topic or news source, e.g. 'NPR top stories', 'technology', 'world news'" }
+                            },
+                            "required": ["topic"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "play_music",
+                        "description": "Spotify music control. Examples: play_music(query='Yung Gravy') to play, play_music(action='shuffle') to toggle shuffle, play_music(action='like') to add current song to Liked Songs, play_music(action='unlike') to remove it. Use for ALL music requests.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Artist, song, album, or playlist name (required for action=play)" },
+                                "action": { "type": "string", "description": "Action: 'play' (default), 'shuffle' (toggle shuffle), 'like' (add to Liked Songs), 'unlike' (remove from Liked Songs)" },
+                                "service": { "type": "string", "description": "Music service: 'spotify' (default)" }
+                            },
+                            "required": []
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "open_app",
+                        "description": "Launch a desktop application by name (via Open Interpreter). For multi-step in-app actions (search, open a channel, play media), use run_task with explicit steps if launch alone is not enough. Not for browser DMs — send_message is separate.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string", "description": "Application name, e.g. 'spotify', 'discord', 'firefox'" }
+                            },
+                            "required": ["name"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "run_task",
+                        "description": "Execute a desktop task autonomously using Open Interpreter (AI code execution engine). Use for: opening apps, controlling Spotify/media, managing files, system control. NOT for browser interaction — use read_url + execute_js to click buttons/inputs on web pages. OI writes and runs Python/bash in a loop until done.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": "What to accomplish. Be specific — include app names, search terms, file paths, etc.",
+                                },
+                            },
+                            "required": ["task"]
+                        }
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "web_search",
-                        "description": "Search the web for current information or facts beyond your knowledge cutoff. Use for general web searches. NOT for searching within a specific app (Spotify, YouTube, etc.) — use search_app for those.",
+                        "description": "Search the web for current information or facts beyond your knowledge cutoff. Use for general web searches.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -797,7 +1389,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "take_screenshot",
-                        "description": "Take a screenshot of all monitors and attach it for analysis. After receiving it, always visually analyze the full image — identify visible apps, UI elements, text, the cursor position (red crosshair), and which monitor the content is on. Never skip analyzing the image.",
+                        "description": "Take a screenshot for visual analysis ONLY. Do NOT use this to interact with apps — use run_task instead (it's faster and more reliable). Only use take_screenshot when you genuinely need to SEE what's on screen: verifying visual state, reading text/UI you can't get another way, or tasks that truly require visual feedback.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -841,6 +1433,45 @@ Singleton {
                                 "body": { "type": "string", "description": "Notification body" }
                             },
                             "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_notifications",
+                        "description": "Read current desktop notifications — incoming messages, alerts, etc. Returns app name, sender, message body, and notification ID. Call this when user wants to reply to a message or asks what notifications they have.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "reply_notification",
+                        "description": "Send an inline reply to a notification (Telegram, WhatsApp, Discord, etc.). Get the notification_id from get_notifications first.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "notification_id": { "type": "number", "description": "The notificationId from get_notifications" },
+                                "message": { "type": "string", "description": "The reply text to send" }
+                            },
+                            "required": ["notification_id", "message"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "send_message",
+                        "description": "Send a message to someone on a browser-based platform. Opens the platform, waits for it to load, then automatically finds the contact and sends the message — no extra tools needed. Just call this once and it handles everything. Example: send_message(to='Alice', message='Hi, are you free tonight?', platform='facebook messenger'). Supports: facebook messenger, telegram, discord, whatsapp, instagram.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "to": { "type": "string", "description": "Recipient name or username" },
+                                "message": { "type": "string", "description": "The message to send" },
+                                "platform": { "type": "string", "description": "App to use: telegram, discord, whatsapp, email, etc." }
+                            },
+                            "required": ["to", "message", "platform"]
                         }
                     }
                 },
@@ -901,7 +1532,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "search_memory",
-                        "description": "Semantically search stored patterns and preferences. Call this at the START of any desktop task or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                        "description": "Search stored user preferences and past experience. Use ONLY when the user explicitly asks about their own settings, history, or saved preferences. NEVER call this mid-task or before executing actions — just do the task.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -971,13 +1602,15 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "click_at",
-                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot and click. Use the exact pixel values from the screenshot image. After clicking, a fresh screenshot is taken automatically — always check it to verify the UI changed. If the UI did NOT change, do NOT click the same spot again; try a different approach.",
+                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot and click. Use the exact pixel values from the screenshot image. After clicking, a fresh screenshot is taken automatically — always check it to verify the UI changed. If the UI did NOT change, do NOT click the same spot again; try a different approach. Supports double-click and modifier keys (ctrl+click for multi-select, shift+click for range select).",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
                                 "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
-                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                                "double": { "type": "boolean", "description": "Double-click instead of single click (default false). Use for opening files, selecting words." },
+                                "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'. Use ctrl+click for multi-select, shift+click for range select." }
                             },
                             "required": ["x", "y"]
                         }
@@ -987,12 +1620,14 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "click_cell",
-                        "description": "Click the center of a numbered grid cell shown in the screenshot overlay. Find the grid number overlaid on the region you want to click. After clicking, a fresh screenshot is taken automatically — verify the UI changed before proceeding. If it did not change, the element may be in a different cell.",
+                        "description": "Click the center of a numbered grid cell shown in the screenshot overlay. Find the grid number overlaid on the region you want to click. After clicking, a fresh screenshot is taken automatically — verify the UI changed before proceeding. If it did not change, the element may be in a different cell. Supports double-click and modifier keys.",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
-                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                                "double": { "type": "boolean", "description": "Double-click instead of single click (default false)" },
+                                "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'" }
                             },
                             "required": ["cell"]
                         }
@@ -1047,7 +1682,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "read_url",
-                        "description": "Fetch a web page and return its interactive elements (inputs, buttons, links) with their IDs. Step 1 of 2 for precise web interaction: call read_url to get element IDs, then use execute_js to interact. NOT needed for visual clicking — use take_screenshot + click_at for that.",
+                        "description": "Browser only. Fetch a static web page and return its interactive elements with their IDs. Only works on static/server-rendered pages. For JavaScript-heavy sites (YouTube, Google, Twitter, Reddit, etc.) skip this and use execute_js directly with CSS selectors. NOT for desktop apps — use run_task or open_app for those.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1061,7 +1696,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "execute_js",
-                        "description": "Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. More precise than clicking visually. NOT for visual navigation — use click_at for that. NOT without read_url first unless you know the element IDs.",
+                        "description": "Browser only. Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. NOT for desktop apps — use run_task for those. NOT for visual navigation — use click_at for that. YouTube: after starting a video, turn off repeat — set document.querySelector('video').loop=false and click the loop button off if active. Then STOP (no more execute_js/take_screenshot) unless the user asked to verify; answer in text.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1117,6 +1752,84 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "drag_to",
+                        "description": "Click and drag from one point to another. Use for sliders, rearranging items, drag-and-drop, selecting text regions, or resizing elements. Coordinates are in screenshot pixel space. Auto-screenshots after.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x1": { "type": "number", "description": "Start X position (screenshot pixels)" },
+                                "y1": { "type": "number", "description": "Start Y position (screenshot pixels)" },
+                                "x2": { "type": "number", "description": "End X position (screenshot pixels)" },
+                                "y2": { "type": "number", "description": "End Y position (screenshot pixels)" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default) or 'right'" }
+                            },
+                            "required": ["x1", "y1", "x2", "y2"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "hover",
+                        "description": "Move the mouse to pixel coordinates without clicking. Use to reveal tooltips, dropdown menus, hover states, or preview cards. Auto-screenshots after so you can see what appeared.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                                "y": { "type": "number", "description": "Vertical pixel position in the screenshot" }
+                            },
+                            "required": ["x", "y"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_screen_text",
+                        "description": "OCR: read text from the screen or a specific region without the grid overlay. Faster than take_screenshot when you just need to read text (error messages, prices, status bars). Returns plain text.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Left edge X (screenshot pixels, optional — omit for full screen)" },
+                                "y": { "type": "number", "description": "Top edge Y (screenshot pixels, optional)" },
+                                "width": { "type": "number", "description": "Region width in pixels (optional)" },
+                                "height": { "type": "number", "description": "Region height in pixels (optional)" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "manage_tabs",
+                        "description": "Control browser tabs. Use to switch between tabs, close tabs, or jump to a specific tab number. Works via keyboard shortcuts in the focused browser.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'next' (ctrl+tab), 'prev' (ctrl+shift+tab), 'close' (ctrl+w), 'goto' (ctrl+N), 'new' (ctrl+t), 'reopen' (ctrl+shift+t)" },
+                                "index": { "type": "integer", "description": "Tab number 1-9 for 'goto' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "wait_and_screenshot",
+                        "description": "Wait a specified number of seconds then take a screenshot. Use when you need to wait for a page to load, animation to finish, or popup to appear before checking the result.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "seconds": { "type": "number", "description": "Seconds to wait (1-15, default 3)" },
+                                "reason": { "type": "string", "description": "Why you're waiting (shown in output)" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "read_clipboard_text",
                         "description": "Read text currently in the clipboard. Use to retrieve content the user has copied, or to read text staged by write_clipboard. Runs automatically.",
                         "parameters": { "type": "object", "properties": {} }
@@ -1156,6 +1869,108 @@ Singleton {
                         }
                     }
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "kg_store",
+                        "description": "Store structured knowledge in the knowledge graph. Creates entities (people, projects, concepts, preferences) with typed observations and relations between them. More powerful than 'remember' for interconnected facts.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'entity' (create/update entity), 'relation' (link two entities), 'observe' (add observations to existing entity)" },
+                                "name": { "type": "string", "description": "Entity name (for 'entity' and 'observe')" },
+                                "entity_type": { "type": "string", "description": "Entity type: person, project, tool, preference, concept, location, etc." },
+                                "observations": { "type": "array", "items": { "type": "string" }, "description": "List of observations/facts about the entity" },
+                                "from_entity": { "type": "string", "description": "Source entity name (for 'relation')" },
+                                "relation": { "type": "string", "description": "Relation type in active voice: 'uses', 'prefers', 'works_on', etc." },
+                                "to_entity": { "type": "string", "description": "Target entity name (for 'relation')" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "kg_query",
+                        "description": "Query the knowledge graph. Search for entities, read specific entities with relations, or view the full graph.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'search', 'read', 'delete_entity', 'delete_relation', 'delete_observation'" },
+                                "query": { "type": "string", "description": "Search query (for 'search')" },
+                                "name": { "type": "string", "description": "Entity name (for 'read', 'delete_entity', 'delete_observation')" },
+                                "observation": { "type": "string", "description": "Observation text to remove (for 'delete_observation')" },
+                                "from_entity": { "type": "string", "description": "Source entity (for 'delete_relation')" },
+                                "relation": { "type": "string", "description": "Relation type (for 'delete_relation')" },
+                                "to_entity": { "type": "string", "description": "Target entity (for 'delete_relation')" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "rag_search",
+                        "description": "Semantic search over the user's indexed local documents (notes, code, configs). Returns most relevant chunks with source paths.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Natural language search query" },
+                                "limit": { "type": "integer", "description": "Max results (default 5)" }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "rag_index",
+                        "description": "Index local files or directories for semantic search via rag_search. Supports text, code, configs. Re-indexing updates changed files.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "File or directory path to index" },
+                                "extensions": { "type": "string", "description": "Comma-separated extensions (e.g. '.md,.txt,.py')" }
+                            },
+                            "required": ["path"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "calendar",
+                        "description": "Access the user's calendar (Google Calendar via khal). Check schedule, add events, search upcoming.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'today', 'list', 'now', 'add', 'search', 'sync'" },
+                                "days": { "type": "integer", "description": "Days to list (default 3)" },
+                                "query": { "type": "string", "description": "Search query" },
+                                "event_args": { "type": "string", "description": "Event args for 'add': '<start> [end] <summary> [:: description]'" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "workspace_layout",
+                        "description": "Save and restore Hyprland window layouts. Save current arrangement or apply a named layout.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'save', 'restore', 'list', 'delete', 'current'" },
+                                "name": { "type": "string", "description": "Layout name" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -1174,20 +1989,30 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "set_shell_config",
-                        "description": "Set a field in the desktop graphical shell config file. Must only be used after `get_shell_config`.",
+                        "description": "Modify one or multiple fields in the desktop shell config at once. CRITICAL: You MUST call get_shell_config first to see available keys - never guess key names. Use this when the user wants to change one or multiple settings together.",
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "key": {
-                                    "type": "string",
-                                    "description": "The key to set, e.g. `bar.borderless`. MUST NOT BE GUESSED, use `get_shell_config` to see what keys are available before setting.",
-                                },
-                                "value": {
-                                    "type": "string",
-                                    "description": "The value to set, e.g. `true`"
+                                "changes": {
+                                    "type": "array",
+                                    "description": "Array of config changes to apply",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "key": {
+                                                "type": "string",
+                                                "description": "The key to set (e.g., 'bar.borderless')"
+                                            },
+                                            "value": {
+                                                "type": "string",
+                                                "description": "The value to set"
+                                            }
+                                        },
+                                        "required": ["key", "value"]
+                                    }
                                 }
                             },
-                            "required": ["key", "value"]
+                            "required": ["changes"]
                         }
                     }
                 },
@@ -1205,6 +2030,84 @@ Singleton {
                                 },
                             },
                             "required": ["command"]
+                        }
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_news",
+                        "description": "Get current news headlines. Use for ANY news request: 'what's in the news', 'NPR today', 'latest on X'. ALWAYS use this instead of read_url for news.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "topic": { "type": "string", "description": "Topic or news source, e.g. 'NPR top stories', 'technology', 'world news'" }
+                            },
+                            "required": ["topic"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "play_music",
+                        "description": "Spotify music control. Examples: play_music(query='Yung Gravy') to play, play_music(action='shuffle') to toggle shuffle, play_music(action='like') to add current song to Liked Songs, play_music(action='unlike') to remove it. Use for ALL music requests.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Artist, song, album, or playlist name (required for action=play)" },
+                                "action": { "type": "string", "description": "Action: 'play' (default), 'shuffle' (toggle shuffle), 'like' (add to Liked Songs), 'unlike' (remove from Liked Songs)" },
+                                "service": { "type": "string", "description": "Music service: 'spotify' (default)" }
+                            },
+                            "required": []
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "open_app",
+                        "description": "Launch a desktop application by name (via Open Interpreter). For multi-step in-app actions (search, open a channel, play media), use run_task with explicit steps if launch alone is not enough. Not for browser DMs — send_message is separate.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string", "description": "Application name, e.g. 'spotify', 'discord', 'firefox'" }
+                            },
+                            "required": ["name"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "run_task",
+                        "description": "Execute a desktop task autonomously using Open Interpreter (AI code execution engine). Use for: opening apps, controlling Spotify/media, managing files, system control. NOT for browser interaction — use read_url + execute_js to click buttons/inputs on web pages. OI writes and runs Python/bash in a loop until done.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": "What to accomplish. Be specific — include app names, search terms, file paths, etc.",
+                                },
+                            },
+                            "required": ["task"]
+                        }
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web for current information or facts beyond your knowledge cutoff. Use for general web searches.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query"
+                                }
+                            },
+                            "required": ["query"]
                         }
                     },
                 },
@@ -1338,7 +2241,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "take_screenshot",
-                        "description": "Take a screenshot and attach it to the conversation for visual analysis. Runs automatically.",
+                        "description": "Take a screenshot for visual analysis ONLY. Do NOT use this to interact with apps — use run_task instead. Only use when you need to SEE the screen state.",
                         "parameters": { "type": "object", "properties": {} }
                     }
                 },
@@ -1382,6 +2285,45 @@ Singleton {
                                 "body": { "type": "string", "description": "Notification body" }
                             },
                             "required": ["title"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_notifications",
+                        "description": "Read current desktop notifications — incoming messages, alerts, etc. Returns app name, sender, message body, and notification ID. Call this when user wants to reply to a message or asks what notifications they have.",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "reply_notification",
+                        "description": "Send an inline reply to a notification (Telegram, WhatsApp, Discord, etc.). Get the notification_id from get_notifications first.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "notification_id": { "type": "number", "description": "The notificationId from get_notifications" },
+                                "message": { "type": "string", "description": "The reply text to send" }
+                            },
+                            "required": ["notification_id", "message"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "send_message",
+                        "description": "Send a message to someone on a browser-based platform. Opens the platform, waits for it to load, then automatically finds the contact and sends the message — no extra tools needed. Just call this once and it handles everything. Example: send_message(to='Alice', message='Hi, are you free tonight?', platform='facebook messenger'). Supports: facebook messenger, telegram, discord, whatsapp, instagram.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "to": { "type": "string", "description": "Recipient name or username" },
+                                "message": { "type": "string", "description": "The message to send" },
+                                "platform": { "type": "string", "description": "App to use: telegram, discord, whatsapp, email, etc." }
+                            },
+                            "required": ["to", "message", "platform"]
                         }
                     }
                 },
@@ -1442,7 +2384,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "search_memory",
-                        "description": "Semantically search stored patterns and preferences. Call this at the START of any desktop task or user preference question — check for relevant past experience before acting. Returns most relevant results ranked by similarity.",
+                        "description": "Search stored user preferences and past experience. Use ONLY when the user explicitly asks about their own settings, history, or saved preferences. NEVER call this mid-task or before executing actions — just do the task.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1512,13 +2454,15 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "click_at",
-                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically.",
+                        "description": "Move the mouse to pixel coordinates (x, y) in the screenshot you just received and click. Coordinates are in the screenshot's pixel space — use the exact values you see in the image. After clicking, a new screenshot is taken automatically. Supports double-click and modifier keys (ctrl+click for multi-select, shift+click for range select).",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
                                 "y": { "type": "number", "description": "Vertical pixel position in the screenshot" },
-                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                                "double": { "type": "boolean", "description": "Double-click instead of single click (default false). Use for opening files, selecting words." },
+                                "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'. Use ctrl+click for multi-select, shift+click for range select." }
                             },
                             "required": ["x", "y"]
                         }
@@ -1528,12 +2472,14 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "click_cell",
-                        "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically.",
+                        "description": "Click the center of a numbered grid cell from the screenshot overlay. The screenshot is divided into a numbered grid — use the cell number you see in the image to click that region. After clicking, a new screenshot is taken automatically. Supports double-click and modifier keys.",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "cell": { "type": "number", "description": "The grid cell number shown in the screenshot overlay" },
-                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" }
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default), 'right', or 'middle'" },
+                                "double": { "type": "boolean", "description": "Double-click instead of single click (default false)" },
+                                "modifiers": { "type": "string", "description": "Hold modifier keys while clicking: 'ctrl', 'shift', 'alt', 'ctrl+shift'" }
                             },
                             "required": ["cell"]
                         }
@@ -1588,7 +2534,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "read_url",
-                        "description": "Fetch a web page and return its interactive elements (inputs, buttons, links) with their IDs. Step 1 of 2 for precise web interaction: call read_url to get element IDs, then use execute_js to interact. NOT needed for visual clicking — use take_screenshot + click_at for that.",
+                        "description": "Browser only. Fetch a static web page and return its interactive elements with their IDs. Only works on static/server-rendered pages. For JavaScript-heavy sites (YouTube, Google, Twitter, Reddit, etc.) skip this and use execute_js directly with CSS selectors. NOT for desktop apps — use run_task or open_app for those.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1602,7 +2548,7 @@ Singleton {
                     "type": "function",
                     "function": {
                         "name": "execute_js",
-                        "description": "Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. More precise than clicking visually. NOT for visual navigation — use click_at for that. NOT without read_url first unless you know the element IDs.",
+                        "description": "Browser only. Step 2 of 2: execute JavaScript in the active browser tab using element IDs from read_url. NOT for desktop apps — use run_task for those. NOT for visual navigation — use click_at for that. YouTube: after starting a video, turn off repeat — set document.querySelector('video').loop=false and click the loop button off if active. Then STOP (no more execute_js/take_screenshot) unless the user asked to verify; answer in text.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -1652,6 +2598,84 @@ Singleton {
                                 "amount": { "type": "integer", "description": "Scroll steps (default 3, max 20). Use 3-5 for normal scrolling, 10+ for large jumps." }
                             },
                             "required": ["direction"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "drag_to",
+                        "description": "Click and drag from one point to another. Use for sliders, rearranging items, drag-and-drop, selecting text regions, or resizing elements. Coordinates are in screenshot pixel space. Auto-screenshots after.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x1": { "type": "number", "description": "Start X position (screenshot pixels)" },
+                                "y1": { "type": "number", "description": "Start Y position (screenshot pixels)" },
+                                "x2": { "type": "number", "description": "End X position (screenshot pixels)" },
+                                "y2": { "type": "number", "description": "End Y position (screenshot pixels)" },
+                                "button": { "type": "string", "description": "Mouse button: 'left' (default) or 'right'" }
+                            },
+                            "required": ["x1", "y1", "x2", "y2"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "hover",
+                        "description": "Move the mouse to pixel coordinates without clicking. Use to reveal tooltips, dropdown menus, hover states, or preview cards. Auto-screenshots after so you can see what appeared.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Horizontal pixel position in the screenshot" },
+                                "y": { "type": "number", "description": "Vertical pixel position in the screenshot" }
+                            },
+                            "required": ["x", "y"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_screen_text",
+                        "description": "OCR: read text from the screen or a specific region without the grid overlay. Faster than take_screenshot when you just need to read text (error messages, prices, status bars). Returns plain text.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "x": { "type": "number", "description": "Left edge X (screenshot pixels, optional — omit for full screen)" },
+                                "y": { "type": "number", "description": "Top edge Y (screenshot pixels, optional)" },
+                                "width": { "type": "number", "description": "Region width in pixels (optional)" },
+                                "height": { "type": "number", "description": "Region height in pixels (optional)" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "manage_tabs",
+                        "description": "Control browser tabs. Use to switch between tabs, close tabs, or jump to a specific tab number. Works via keyboard shortcuts in the focused browser.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'next' (ctrl+tab), 'prev' (ctrl+shift+tab), 'close' (ctrl+w), 'goto' (ctrl+N), 'new' (ctrl+t), 'reopen' (ctrl+shift+t)" },
+                                "index": { "type": "integer", "description": "Tab number 1-9 for 'goto' action" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "wait_and_screenshot",
+                        "description": "Wait a specified number of seconds then take a screenshot. Use when you need to wait for a page to load, animation to finish, or popup to appear before checking the result.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "seconds": { "type": "number", "description": "Seconds to wait (1-15, default 3)" },
+                                "reason": { "type": "string", "description": "Why you're waiting (shown in output)" }
+                            }
                         }
                     }
                 },
@@ -1741,6 +2765,7 @@ Singleton {
                 "go to Keys in the top-right menu, and create an API key."
             ),
         }),
+        // Ollama exposes `/v1/chat/completions` (OpenAI-compatible). Uses tools.openai + OpenAiApiStrategy — same path as OpenRouter/Mistral.
         "ollama": aiModelComponent.createObject(this, {
             "name": `Ollama - ${currentModel}`,
             "icon": guessModelLogo(currentModel),
@@ -1771,12 +2796,12 @@ Singleton {
             "description": Translation.tr("Online | %1's model | Delivers fast, responsive and well-formatted answers. Disadvantages: not very eager to do stuff; might make up unknown function calls").arg("Mistral"),
             "homepage": "https://mistral.ai/news/mistral-medium-3",
             "endpoint": "https://api.mistral.ai/v1/chat/completions",
-            "model": "mistral-medium-2505",
+            "model": `${currentModel}`,
             "requires_key": true,
             "key_id": "mistral",
             "key_get_link": "https://console.mistral.ai/api-keys",
             "key_get_description": Translation.tr("**Instructions**: Log into Mistral account, go to Keys on the sidebar, click Create new key"),
-            "api_format": "mistral",
+            "api_format": "openai",
         }),
     }
     property var modelList: Object.keys(root.models)
@@ -1840,7 +2865,6 @@ Singleton {
     property var apiStrategies: {
         "openai": openaiApiStrategy.createObject(this),
         "gemini": geminiApiStrategy.createObject(this),
-        "mistral": mistralApiStrategy.createObject(this),
     }
     property ApiStrategy currentApiStrategy: apiStrategies[models[currentModelId]?.api_format || "openai"]
 
@@ -1859,6 +2883,11 @@ Singleton {
     property int lastGridCols: 8
     property int lastGridRows: 5
     property string _lastClickInfo: ""
+    // Set before each screenshotProc run; consumed in makeRequest when attaching tool_choice after vision.
+    // "explicit" = user/tool take_screenshot — force next tool. "execute_js" / "followup" = automation — do not force (avoids execute_js loops).
+    property string _pendingVisionFollowUpKind: ""
+    // One send_message per user turn — handler fires makeRequest immediately; model otherwise loops send_message dozens of times.
+    property bool _sendMessageIssuedThisTurn: false
 
     Component.onCompleted: {
         // Ensure memories directory exists
@@ -2038,7 +3067,7 @@ Singleton {
                 }
             }
         } else {
-            if (feedback) root.addMessage(Translation.tr("Invalid model. Supported: \n```\n") + modelList.join("\n```\n```\n"), Ai.interfaceRole) + "\n```"
+            if (feedback) root.addMessage(Translation.tr("Invalid model. Supported: \n```\n") + modelList.join("\n```\n```\n") + "\n```", Ai.interfaceRole)
         }
     }
 
@@ -2056,7 +3085,7 @@ Singleton {
     }
 
     function setTemperature(value) {
-        if (value == NaN || value < 0 || value > 2) {
+        if (isNaN(value) || value < 0 || value > 2) {
             root.addMessage(Translation.tr("Temperature must be between 0 and 2"), Ai.interfaceRole);
             return;
         }
@@ -2118,17 +3147,47 @@ Singleton {
 
         function markDone() {
             requester.message.done = true;
+            // Sub-agent completion handling
+            if (root.activeAgentType && root.agentCallStack.length > 0) {
+                if (root._pendingAgentResult.length > 0) {
+                    // Agent called return_result explicitly
+                    const res = root._pendingAgentResult;
+                    root._pendingAgentResult = "";
+                    root._finalizeCurrentAgent(res);
+                } else if (!requester.message.functionCall) {
+                    // Agent produced a plain text response (no tool call) — use it as result
+                    const res = requester.message.content || requester.message.rawContent || "[Agent produced no output]";
+                    root._finalizeCurrentAgent(res);
+                }
+                // For intermediate tool-call steps: just return, makeRequest already scheduled
+                return;
+            }
             if (root.postResponseHook) {
                 root.postResponseHook();
-                root.postResponseHook = null; // Reset hook after use
+                root.postResponseHook = null;
             }
-            root.requestRestoreSidebars();
+            if (!root._pendingDesktopAction) root.requestRestoreSidebars();
             root.saveChat("lastSession")
             root.responseFinished()
         }
 
         function makeRequest() {
-            const model = models[currentModelId];
+            // Check if active agent wants cloud model escalation
+            let model = models[currentModelId];
+            if (root.activeAgentType) {
+                const agentDef = root.agentDefs[root.activeAgentType];
+                if (agentDef?.useCloudModel && root.agentCloudModel) {
+                    // Create a temporary model object pointing to the cloud Ollama model
+                    model = {
+                        name: `Ollama - ${root.agentCloudModel}`,
+                        model: root.agentCloudModel,
+                        endpoint: "http://localhost:11434/v1/chat/completions",
+                        requires_key: false,
+                        api_format: "openai",
+                        extraParams: { "num_ctx": 32768 },
+                    };
+                }
+            }
 
             // Guard against infinite tool-call loops
             root.consecutiveToolCalls++;
@@ -2141,7 +3200,8 @@ Singleton {
             // Fetch API keys if needed
             if (model?.requires_key && !KeyringStorage.loaded) KeyringStorage.fetchKeyringData();
             
-            requester.currentStrategy = root.currentApiStrategy;
+            // Use strategy matching the model's api_format (may differ from currentApiStrategy if agent overrides model)
+            requester.currentStrategy = root.apiStrategies[model.api_format || "openai"];
             requester.currentStrategy.reset(); // Reset strategy state
 
             /* Put API key in environment variable */
@@ -2149,7 +3209,9 @@ Singleton {
 
             /* Build endpoint, request data */
             const endpoint = root.currentApiStrategy.buildEndpoint(model);
-            const messageArray = root.messageIDs.map(id => root.messageByID[id]);
+            const messageArray = root.activeAgentType
+                ? (root.agentMsgIDs[root.activeAgentType] || []).map(id => root.agentMsgByID[id]).filter(Boolean)
+                : root.messageIDs.map(id => root.messageByID[id]);
             const filteredMessageArray = messageArray.filter(message => message.role !== Ai.interfaceRole);
             // Strip old file/image data from history — only the current pendingFilePath is sent.
             // Resending base64 screenshots in every message blows context on long agentic chains.
@@ -2171,12 +3233,43 @@ Singleton {
             if (contextArr.length > 50) {
                 const toolMsgs = contextArr.filter(m => m.functionName && m.functionName.length > 0);
                 if (toolMsgs.length > TOOL_RESULT_KEEP) {
-                    const dropSet = new Set(toolMsgs.slice(0, toolMsgs.length - TOOL_RESULT_KEEP));
-                    contextArr = contextArr.filter(m => !dropSet.has(m));
-                    console.log(`[AI] Context compacted: dropped ${dropSet.size} old tool results (${contextArr.length} messages remaining)`);
+                    const toDropTools = toolMsgs.slice(0, toolMsgs.length - TOOL_RESULT_KEEP);
+                    const dropToolSet = new Set(toDropTools);
+                    const indicesToRemove = new Set();
+                    for (let i = 0; i < contextArr.length; i++) {
+                        if (dropToolSet.has(contextArr[i])) {
+                            indicesToRemove.add(i);
+                            if (i > 0) {
+                                const prev = contextArr[i - 1];
+                                if (prev.role === "assistant" && prev.functionCall && prev.functionCall.name) {
+                                    indicesToRemove.add(i - 1);
+                                }
+                            }
+                        }
+                    }
+                    contextArr = contextArr.filter((_, i) => !indicesToRemove.has(i));
+                    console.log(`[AI] Context compacted: dropped ${indicesToRemove.size} messages (tool results + paired assistant tool calls, ${contextArr.length} remaining)`);
                 }
             }
-            const data = root.currentApiStrategy.buildRequestData(model, contextArr, root.systemPrompt, root.temperature, root.tools[model.api_format][root.currentTool], root.pendingFilePath);
+            const agentSysPrompt = root.activeAgentType
+                ? (root.agentDefs[root.activeAgentType]?.systemPrompt || root.systemPrompt)
+                : root.systemPrompt;
+            const data = root.currentApiStrategy.buildRequestData(model, contextArr, agentSysPrompt, root.temperature, root.getActiveTools(model.api_format), root.pendingFilePath);
+            // After vision pipeline tool results, optionally force the next step to use a tool.
+            // Do NOT force after automated follow-up screenshots (execute_js / click / search_app): tool_choice "required"
+            // makes the model call execute_js again in a tight loop even when the first run succeeded.
+            const fmt = model.api_format || "openai";
+            if (data && data.tools && data.tools.length > 0 && fmt === "openai") {
+                const last = contextArr.length > 0 ? contextArr[contextArr.length - 1] : null;
+                const visionToolNames = ["take_screenshot", "capture_region", "read_clipboard_image"];
+                if (last && last.functionName && visionToolNames.includes(last.functionName)) {
+                    const vKind = root._pendingVisionFollowUpKind;
+                    root._pendingVisionFollowUpKind = "";
+                    if (vKind !== "execute_js" && vKind !== "followup") {
+                        data.tool_choice = "required";
+                    }
+                }
+            }
             // console.log("[Ai] Request data: ", JSON.stringify(data, null, 2));
 
             let requestHeaders = {
@@ -2193,8 +3286,14 @@ Singleton {
                 "done": false,
             });
             const id = idForMessage(requester.message);
-            root.messageIDs = [...root.messageIDs, id];
-            root.messageByID[id] = requester.message;
+            if (root.activeAgentType) {
+                const ids = root.agentMsgIDs[root.activeAgentType] || [];
+                root.agentMsgIDs[root.activeAgentType] = [...ids, id];
+                root.agentMsgByID[id] = requester.message;
+            } else {
+                root.messageIDs = [...root.messageIDs, id];
+                root.messageByID[id] = requester.message;
+            }
 
             /* Build header string for curl */ 
             let headerString = Object.entries(requestHeaders)
@@ -2250,6 +3349,8 @@ Singleton {
                     if (result.functionCall) {
                         console.log("[AI] Dispatching functionCall:", result.functionCall.name);
                         requester.message.functionCall = result.functionCall;
+                        requester.message.toolCallId = result.functionCall.id || "";
+                        root._pendingToolCallId = result.functionCall.id || "";
                         root.handleFunctionCall(result.functionCall.name, result.functionCall.args, requester.message);
                     }
                     if (result.tokenUsage) {
@@ -2263,8 +3364,7 @@ Singleton {
                     
                 } catch (e) {
                     console.log("[AI] Could not parse response: ", e);
-                    requester.message.rawContent += data;
-                    requester.message.content += data;
+                    // Do NOT leak raw SSE data into message content
                 }
             }
         }
@@ -2287,12 +3387,19 @@ Singleton {
 
     property int consecutiveToolCalls: 0
     property bool _turnHadPlan: false
+    property string _pendingToolCallId: ""
     readonly property int maxConsecutiveToolCalls: 25
+    property var _toolCallCounts: ({})  // per-tool call count within a turn
 
     function sendUserMessage(message) {
         if (message.length === 0) return;
         root.consecutiveToolCalls = 0;
         root._turnHadPlan = false;
+        root._pendingDesktopAction = false;
+        root._pendingVisionFollowUpKind = "";
+        root._toolCallCounts = ({});
+        root._sendMessageIssuedThisTurn = false;
+        root._lastUserMessageText = message; // Store for intent detection
         root.requestRestoreSidebars();
         root.addMessage(message, "user");
         requester.makeRequest();
@@ -2315,28 +3422,168 @@ Singleton {
     }
 
     function createFunctionOutputMessage(name, output, includeOutputInChat = true) {
+        const callId = root._pendingToolCallId || `call_${name}`;
+        root._pendingToolCallId = "";
         return aiMessageComponent.createObject(root, {
             "role": "user",
             "content": `[[ Output of ${name} ]]${includeOutputInChat ? ("\n\n<think>\n" + output + "\n</think>") : ""}`,
             "rawContent": `[[ Output of ${name} ]]${includeOutputInChat ? ("\n\n<think>\n" + output + "\n</think>") : ""}`,
             "functionName": name,
             "functionResponse": output,
+            "toolCallId": callId,
             "thinking": false,
             "done": true,
             // "visibleToUser": false,
         });
     }
 
+    function triggerAutoScreenshot(delayMs) {
+        const delay = delayMs || 500;
+        Qt.callLater(() => {
+            root._pendingVisionFollowUpKind = "followup";
+            const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
+            const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
+            screenshotProc.targetPath = dest;
+            const cmd = `
+sleep ${delay / 1000}
+DEST="${dest}"
+MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\\n' || echo '[]')
+CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
+CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
+CY=$(echo "\${CURSOR}" | awk '{print $2}')
+MON_NAME=$(MONITORS="$MONITORS" python3 -c '
+import json,os,sys,subprocess
+mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
+for m in mons:
+    if m.get("focused"): print(m.get("name","")); sys.exit()
+if mons: print(mons[0].get("name",""))
+' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\\r')
+if [ -n "$MON_NAME" ]; then
+    grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
+else
+    grim "$DEST" 2>&1 || exit 1
+fi
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
+from PIL import Image, ImageDraw, ImageFont
+import os, json
+dest = os.environ['DEST']
+cx   = int(os.environ.get('CX', 0))
+cy   = int(os.environ.get('CY', 0))
+img  = Image.open(dest).convert('RGBA')
+W, H = img.size
+cols = 12
+rows = max(5, round(cols * H / W))
+cell_w = W // cols
+cell_h = H // rows
+overlay = Image.new('RGBA', (W, H), (0,0,0,0))
+draw = ImageDraw.Draw(overlay)
+font = None
+for p in ['/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/noto/NotoSans-Bold.ttf']:
+    try: font = ImageFont.truetype(p, max(14, min(28, cell_h//8))); break
+    except: pass
+if font is None: font = ImageFont.load_default()
+for row in range(rows):
+    for col in range(cols):
+        n  = row * cols + col + 1
+        x1 = col * cell_w; y1 = row * cell_h
+        x2 = x1 + cell_w - 1; y2 = y1 + cell_h - 1
+        ccx = x1 + cell_w // 2; ccy = y1 + cell_h // 2
+        draw.rectangle([x1,y1,x2,y2], outline=(255,255,255,60), width=1)
+        t = str(n)
+        bb = draw.textbbox((ccx,ccy), t, font=font, anchor='mm')
+        draw.rectangle([bb[0]-3,bb[1]-3,bb[2]+3,bb[3]+3], fill=(0,0,0,150))
+        draw.text((ccx,ccy), t, fill=(255,255,255,210), font=font, anchor='mm')
+monitors = json.loads(os.environ.get('MONITORS','[]'))
+mon_name = os.environ.get('MON_NAME','')
+off_x, off_y = 0, 0
+if mon_name:
+    for m in monitors:
+        if m.get('name') == mon_name:
+            off_x = m.get('x', 0); off_y = m.get('y', 0); break
+else:
+    off_x = min((m.get('x',0) for m in monitors), default=0)
+    off_y = min((m.get('y',0) for m in monitors), default=0)
+cx_img = cx - off_x; cy_img = cy - off_y
+r = 18
+if 0 <= cx_img < W and 0 <= cy_img < H:
+    draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
+    draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
+    draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
+print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
+PYEOF
+)
+SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
+SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
+SS_OFFSET_X=\${SS_OFFSET_X:-0}
+SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
+GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
+IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
+IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
+GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
+GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
+echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
+echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
+echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
+echo "IMAGE_SCALE:\${SCALE}"
+echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
+`;
+            screenshotProc.command = ["bash", "-c", cmd];
+            screenshotProc.running = true;
+        });
+    }
+
     function addFunctionOutputMessage(name, output) {
         const aiMessage = createFunctionOutputMessage(name, output);
         const id = idForMessage(aiMessage);
-        root.messageIDs = [...root.messageIDs, id];
-        root.messageByID[id] = aiMessage;
+        if (root.activeAgentType) {
+            const ids = root.agentMsgIDs[root.activeAgentType] || [];
+            root.agentMsgIDs[root.activeAgentType] = [...ids, id];
+            root.agentMsgByID[id] = aiMessage;
+        } else {
+            root.messageIDs = [...root.messageIDs, id];
+            root.messageByID[id] = aiMessage;
+        }
     }
 
     function rejectCommand(message: AiMessageData) {
         if (!message.functionPending) return;
         message.functionPending = false; // User decided, no more "thinking"
+        root._pendingToolCallId = message.toolCallId || "";
         addFunctionOutputMessage(message.functionName, Translation.tr("Command rejected by user"))
     }
 
@@ -2344,6 +3591,7 @@ Singleton {
         if (!message.functionPending) return;
         message.functionPending = false; // User decided, no more "thinking"
 
+        root._pendingToolCallId = message.toolCallId || "";
         const responseMessage = createFunctionOutputMessage(message.functionName, "", false);
         const id = idForMessage(responseMessage);
         root.messageIDs = [...root.messageIDs, id];
@@ -2360,6 +3608,7 @@ Singleton {
         property string shellCommand: ""
         property AiMessageData message
         property string baseMessageContent: ""
+        property string currentToolName: ""
         command: ["bash", "-c", shellCommand]
         stdout: SplitParser {
             onRead: (output) => {
@@ -2376,21 +3625,77 @@ Singleton {
         }
         onExited: (exitCode, exitStatus) => {
             commandExecutionProc.message.functionResponse += `[[ Command exited with code ${exitCode} (${exitStatus}) ]]\n`;
+            const toolName = commandExecutionProc.currentToolName;
+            commandExecutionProc.currentToolName = "";
+            if (toolName === "send_message" || toolName === "run_task") {
+                commandExecutionProc.message.functionResponse += `[[ Task delegated and complete. Report the above result to the user. Do not call any more tools. ]]\n`;
+            } else if (toolName === "open_app" || toolName === "launch_app") {
+                commandExecutionProc.message.functionResponse += `[[ App launch finished. Answer only about the user's request (e.g. media/app control). Do not pivot to messaging, WhatsApp, or send_message unless the user asked for that. Do not call more tools unless still needed. ]]\n`;
+            } else if (toolName === "web_search") {
+                commandExecutionProc.message.functionResponse += `[[ Search complete. Use the results above to answer the user's question. Do NOT search again — analyze these results and respond. If the user asked to buy/add to cart, open the product URL from the results. IMPORTANT: Only cite information and URLs that appear in the search results above. Do NOT make up product names, prices, URLs, or details that are not in these results. If the results don't have enough detail, say so honestly. ]]\n`;
+            }
+            root._pendingDesktopAction = false;
             requester.makeRequest();
         }
     }
 
+
+
     function handleFunctionCall(name, args: var, message: AiMessageData) {
         message.functionName = name; // Needed so approveCommand can label function output correctly
-        // show_plan gate: for action tools on a new turn (2+ tool calls), require a plan first
-        const actionTools = ["click_at","click_cell","type_text","press_key","launch_app","scroll"];
-        if (!root._turnHadPlan && root.consecutiveToolCalls >= 2 && actionTools.includes(name)) {
-            // Inject a reminder to plan first
-            addFunctionOutputMessage(name, `[Gate] You attempted '${name}' without calling show_plan first. Please call show_plan with the full task breakdown before executing any actions.`);
+        // Per-tool repeat limit: block tools that are called too many times in one turn
+        const toolLimits = { "web_search": 3, "read_url": 4, "execute_js": 5 };
+        if (name in toolLimits) {
+            root._toolCallCounts[name] = (root._toolCallCounts[name] || 0) + 1;
+            if (root._toolCallCounts[name] > toolLimits[name]) {
+                addFunctionOutputMessage(name, `[Blocked] You already called ${name} ${toolLimits[name]} times this turn. STOP calling ${name}. Use the results you already have and respond to the user in text.`);
+                requester.makeRequest();
+                return;
+            }
+        }
+        // show_plan gate: disabled — small local models loop on show_plan instead of executing
+        // The system prompt still encourages planning, but it's not enforced
+        // const actionTools = ["click_at","click_cell","type_text","press_key","launch_app","scroll","drag_to","hover","manage_tabs"];
+        // if (!root._turnHadPlan && root.consecutiveToolCalls >= 2 && actionTools.includes(name) && !root.activeAgentType) {
+        //     addFunctionOutputMessage(name, `[Gate] You attempted '${name}' without calling show_plan first.`);
+        //     requester.makeRequest();
+        //     return;
+        // }
+        if (name === "call_agent") {
+            const agentType = (args.agent || "").toLowerCase().trim();
+            const task = args.task || "";
+            if (!root.agentDefs[agentType]) {
+                addFunctionOutputMessage(name, `Unknown agent: '${agentType}'. Available: desktop (Vector), research (Scout), system (Forge), personal (Sage).`);
+                requester.makeRequest();
+                return;
+            }
+            const def = root.agentDefs[agentType];
+            // Push coordinator state onto stack
+            root.agentCallStack = [...root.agentCallStack, {
+                parentAgentType: root.activeAgentType,
+                toolCallId: root._pendingToolCallId,
+                savedCalls: root.consecutiveToolCalls
+            }];
+            root._pendingToolCallId = "";
+            root.consecutiveToolCalls = 0;
+            // Init agent context: one user message = the task
+            const taskMsg = aiMessageComponent.createObject(root, {
+                "role": "user", "content": task, "rawContent": task,
+                "thinking": false, "done": true
+            });
+            const taskId = idForMessage(taskMsg);
+            root.agentMsgIDs[agentType] = [taskId];
+            root.agentMsgByID[taskId] = taskMsg;
+            root.activeAgentType = agentType;
+            // Show brief indicator in main chat
+            root.addMessage(`◆ ${def.displayName} (${def.emoji}) — ${task.substring(0, 100)}${task.length > 100 ? "…" : ""}`, root.interfaceRole);
             requester.makeRequest();
             return;
-        }
-        if (name === "switch_to_search_mode") {
+        } else if (name === "return_result") {
+            root._pendingAgentResult = args.result || "Task completed.";
+            // Don't call makeRequest — markDone will pick up _pendingAgentResult and finalize
+            return;
+        } else if (name === "switch_to_search_mode") {
             const modelId = root.currentModelId;
             root.currentTool = "search"
             root.postResponseHook = () => { root.currentTool = "functions" }
@@ -2401,13 +3706,19 @@ Singleton {
             addFunctionOutputMessage(name, JSON.stringify(configJson));
             requester.makeRequest();
         } else if (name === "set_shell_config") {
-            if (!args.changes || !Array.isArray(args.changes)) {
-                addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `changes` array."));
+            let changes = [];
+            if (args.changes && Array.isArray(args.changes)) {
+                changes = args.changes;
+            } else if (args.key != null && args.value != null) {
+                // Legacy OpenAI/Mistral schema (single key/value) — still accepted from old chats or manual calls
+                changes = [{ key: args.key, value: String(args.value) }];
+            } else {
+                addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `changes` array (or legacy `key` and `value`)."));
                 requester.makeRequest();
                 return;
             }
             let results = [];
-            for (const change of args.changes) {
+            for (const change of changes) {
                 if (!change.key || !change.value) {
                     results.push(`❌ Skipped invalid change: ${JSON.stringify(change)}`);
                     continue;
@@ -2444,6 +3755,77 @@ Singleton {
                 message.content += contentToAppend;
                 message.functionPending = true;
             }
+        } else if (name === "get_news") {
+            const topic = args.topic || "top news";
+            const responseMessage = createFunctionOutputMessage(name, "", false);
+            const id = idForMessage(responseMessage);
+            root.messageIDs = [...root.messageIDs, id];
+            root.messageByID[id] = responseMessage;
+            commandExecutionProc.message = responseMessage;
+            commandExecutionProc.baseMessageContent = responseMessage.content;
+            const escapedTopic = topic.replace(/'/g, "'\\''");
+            commandExecutionProc.shellCommand = `ii-news '${escapedTopic}'`;
+            commandExecutionProc.running = true;
+        } else if (name === "play_music") {
+            const action = (args.action || "play").toLowerCase();
+            const query = args.query || "";
+            const service = (args.service || "spotify").toLowerCase();
+            const responseMessage = createFunctionOutputMessage(name, "", false);
+            const id = idForMessage(responseMessage);
+            root.messageIDs = [...root.messageIDs, id];
+            root.messageByID[id] = responseMessage;
+            commandExecutionProc.message = responseMessage;
+            commandExecutionProc.baseMessageContent = responseMessage.content;
+            if (action === "shuffle") {
+                commandExecutionProc.shellCommand = `playerctl --player=${service} shuffle toggle && echo "Shuffle toggled." && playerctl --player=${service} shuffle`;
+            } else if (action === "like" || action === "unlike" || action === "save" || action === "unsave") {
+                // Sidebar closes before this runs (requestHideSidebars above), so wtype can reach Spotify
+                const verb = (action === "unlike" || action === "unsave") ? "Unliked" : "Liked";
+                commandExecutionProc.shellCommand = `SONG=$(playerctl --player=spotify metadata --format "{{artist}} - {{title}}" 2>/dev/null); hyprctl dispatch focuswindow "class:spotify" && sleep 0.5 && wtype -M alt -M shift b -m shift -m alt && echo "${verb}: $SONG"`;
+            } else {
+                if (!query) { addFunctionOutputMessage(name, "Invalid: query is required for play"); requester.makeRequest(); return; }
+                const encodedQuery = query.replace(/ /g, "+").replace(/'/g, "'\\''");
+                const escapedQuery = query.replace(/'/g, "'\\''");
+                commandExecutionProc.shellCommand = `oi-task 'Play music on ${service}. Run: playerctl --player=${service} open "${service}:search:${encodedQuery}" — if ${service} is not running, launch it first with: hyprctl dispatch exec ${service} && sleep 3. The search query is: ${escapedQuery}'`;
+            }
+            root._pendingDesktopAction = true;
+            root.requestHideSidebars();
+            commandExecutionProc.running = true;
+        } else if (name === "open_app") {
+            const appName = args.name || "";
+            if (!appName) { addFunctionOutputMessage(name, "Invalid: name is required"); requester.makeRequest(); return; }
+            const responseMessage = createFunctionOutputMessage(name, "", false);
+            const id = idForMessage(responseMessage);
+            root.messageIDs = [...root.messageIDs, id];
+            root.messageByID[id] = responseMessage;
+            commandExecutionProc.message = responseMessage;
+            commandExecutionProc.baseMessageContent = responseMessage.content;
+            const escapedName = appName.replace(/'/g, "'\\''");
+            commandExecutionProc.shellCommand = `oi-task 'Launch the application: ${escapedName}'`;
+            commandExecutionProc.currentToolName = name;
+            root._pendingDesktopAction = true;
+            root.requestHideSidebars();
+            commandExecutionProc.running = true;
+        } else if (name === "run_task") {
+            const task = args.task || "";
+            if (!task) {
+                addFunctionOutputMessage(name, "Invalid: task is required");
+                requester.makeRequest();
+                return;
+            }
+            const responseMessage = createFunctionOutputMessage(name, "", false);
+            const id = idForMessage(responseMessage);
+            root.messageIDs = [...root.messageIDs, id];
+            root.messageByID[id] = responseMessage;
+            commandExecutionProc.message = responseMessage;
+            commandExecutionProc.baseMessageContent = responseMessage.content;
+            // Escape single quotes in task for shell argument
+            const escapedTask = task.replace(/'/g, "'\\''");
+            commandExecutionProc.shellCommand = `oi-task '${escapedTask}'`;
+            commandExecutionProc.currentToolName = "run_task";
+            root._pendingDesktopAction = true;
+            root.requestHideSidebars();
+            commandExecutionProc.running = true;
         } else if (name === "web_search") {
             if (!args.query || args.query.length === 0) {
                 addFunctionOutputMessage(name, Translation.tr("Invalid arguments. Must provide `query`."));
@@ -2456,7 +3838,9 @@ Singleton {
             root.messageByID[id] = responseMessage;
             commandExecutionProc.message = responseMessage;
             commandExecutionProc.baseMessageContent = responseMessage.content;
-            commandExecutionProc.shellCommand = `bash ~/.config/quickshell/scripts/ai-search.sh "${args.query.replace(/"/g, '\\"')}"`;
+            commandExecutionProc.currentToolName = "web_search";
+            const escapedQuery = args.query.replace(/'/g, "'\\''");
+            commandExecutionProc.shellCommand = `bash ~/.config/quickshell/scripts/ai-search.sh '${escapedQuery}'`;
             commandExecutionProc.running = true;
         } else if (name === "remember") {
             const content = args.content || "";
@@ -2632,18 +4016,26 @@ CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
 MON_NAME=$(MONITORS="$MONITORS" python3 -c '
-import json,os,sys
+import json,os,sys,subprocess
 mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
 for m in mons:
     if m.get("focused"): print(m.get("name","")); sys.exit()
 if mons: print(mons[0].get("name",""))
 ' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\r')
 if [ -n "$MON_NAME" ]; then
     grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
 else
     grim "$DEST" 2>&1 || exit 1
 fi
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
 import os, json
 dest = os.environ['DEST']
@@ -2692,31 +4084,52 @@ if 0 <= cx_img < W and 0 <= cy_img < H:
     draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
     draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
     draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
-Image.alpha_composite(img, overlay).convert('RGB').save(dest)
-print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
 print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
 SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
 SS_OFFSET_X=\${SS_OFFSET_X:-0}
 SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
-CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
-CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
 GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
 IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
 IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
 GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
 GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
 echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
 echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
 echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
-echo "IMAGE_SCALE:1"
+echo "IMAGE_SCALE:\${SCALE}"
 echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
             root.requestHideSidebars();
             const _cmd = cmd;
             sidebarHideTimer.pendingAction = () => {
+                root._pendingVisionFollowUpKind = "explicit";
                 screenshotProc.command = ["bash", "-c", _cmd];
                 screenshotProc.running = true;
             };
@@ -2730,15 +4143,135 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             root.messageByID[launchId] = launchMsg;
             commandExecutionProc.message = launchMsg;
             commandExecutionProc.baseMessageContent = launchMsg.content;
-            const appBin = app.split(" ")[0].toLowerCase().replace(/[^a-z0-9_\-]/g, "");
-            commandExecutionProc.shellCommand = `hyprctl dispatch exec "${app.replace(/"/g, '\\"')}" 2>&1; sleep 2; pgrep -xi "${appBin}" > /dev/null && echo "Started: ${app}" || echo "Launch command sent but process '${appBin}' not detected. If this is a Steam game, use open_file with its steam://rungameid/APPID URI instead."`;
+            const escapedApp = app.replace(/'/g, "'\\''");
+            commandExecutionProc.shellCommand = `oi-task 'Launch the application: ${escapedApp}'`;
+            commandExecutionProc.currentToolName = name;
             commandExecutionProc.running = true;
         } else if (name === "open_file") {
             const path = args.path || args.url || args.uri || "";
             if (!path) { addFunctionOutputMessage(name, "Invalid: path is required"); requester.makeRequest(); return; }
             Quickshell.execDetached(["xdg-open", path]);
-            addFunctionOutputMessage(name, `Opened: ${path}`);
+            const isUrl = /^https?:\/\//i.test(path);
+            const hint = isUrl ? `\nNote: The page was only opened in the browser. To interact with it (click buttons, add to cart, fill forms), use execute_js or call_agent(desktop).` : "";
+            addFunctionOutputMessage(name, `Opened: ${path}${hint}`);
             requester.makeRequest();
+        } else if (name === "get_notifications") {
+            const notifs = Notifications.list;
+            if (!notifs || notifs.length === 0) {
+                addFunctionOutputMessage(name, "No notifications.");
+            } else {
+                const lines = notifs.slice().reverse().map(n => {
+                    const age = Math.round((Date.now() - n.time) / 60000);
+                    const ageStr = age < 1 ? "just now" : `${age}m ago`;
+                    const replyTag = n.hasReply ? " [can_reply]" : "";
+                    return `[id:${n.notificationId}] ${n.appName} | ${n.summary}${n.body ? ": " + n.body : ""} (${ageStr})${replyTag}`;
+                });
+                addFunctionOutputMessage(name, lines.join("\n"));
+            }
+            requester.makeRequest();
+        } else if (name === "reply_notification") {
+            const notifId = parseInt(args.notification_id);
+            const replyText = args.message || "";
+            if (!notifId || !replyText) {
+                addFunctionOutputMessage(name, "Error: notification_id and message are required.");
+            } else {
+                Notifications.sendReply(notifId, replyText);
+                addFunctionOutputMessage(name, `Reply sent to notification ${notifId}.`);
+            }
+            requester.makeRequest();
+        } else if (name === "send_message") {
+            if (root._sendMessageIssuedThisTurn && !root.activeAgentType) {
+                addFunctionOutputMessage(name,
+                    "[Gate] send_message was already started this turn. Do NOT call send_message again. Tell the user the browser automation is running or finished and offer to help with something else.");
+                requester.makeRequest();
+                return;
+            }
+            const to = args.to || "";
+            const msg = args.message || "";
+            const platform = (args.platform || "").toLowerCase();
+            if (!to || !msg || !platform) {
+                addFunctionOutputMessage(name, `Error: missing required args. Got: to="${to}", message="${msg}", platform="${platform}". Retry with all three filled in.`);
+                requester.makeRequest();
+                return;
+            }
+            const platformUrls = {
+                "facebook messenger": "https://www.messenger.com",
+                "messenger": "https://www.messenger.com",
+                "telegram": "https://web.telegram.org",
+                "discord": "https://discord.com/app",
+                "whatsapp": "https://web.whatsapp.com",
+                "instagram": "https://www.instagram.com/direct/inbox/",
+            };
+            const platformEntry = Object.entries(platformUrls).find(([k]) => platform.includes(k));
+            const platformUrl = platformEntry ? platformEntry[1] : null;
+            if (platformUrl) { try {
+                const automationJS =
+                    `(function(){` +
+                    `function S(ms){return new Promise(r=>setTimeout(r,ms));}` +
+                    `function setVal(el,v){const p=Object.getPrototypeOf(el);const d=Object.getOwnPropertyDescriptor(p,"value");` +
+                    `if(d&&d.set){d.set.call(el,v);}else{el.value=v;}` +
+                    `el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));}` +
+                    `async function go(){` +
+                    `document.title="[AI]start";` +
+                    `const search=document.querySelector("input[aria-label*='Search' i],input[placeholder*='Search' i],input[type='search']");` +
+                    `if(!search){document.title="[AI]no-search";return;}` +
+                    `search.click();search.focus();setVal(search,${JSON.stringify(to)});` +
+                    `document.title="[AI]searching";await S(3000);` +
+                    `const allResults=[...document.querySelectorAll("[role='option'],[role='listitem'],[data-testid*='row']")];` +
+                    `const resultEl=allResults.find(el=>el.querySelector("img"));` +
+                    `if(!resultEl){document.title="[AI]no-result:"+allResults.length;return;}` +
+                    `const link=resultEl.querySelector("a")||resultEl.closest("a");` +
+                    `if(link){link.click();}else{resultEl.click();}` +
+                    `await S(4000);` +
+                    `const boxes=[...document.querySelectorAll("div[contenteditable='true']")];` +
+                    `const msgBox=boxes.filter(e=>!(e.getAttribute("aria-label")||"").toLowerCase().includes("search")).pop();` +
+                    `if(!msgBox){document.title="[AI]no-msgbox:"+boxes.length;return;}` +
+                    `msgBox.focus();msgBox.click();await S(500);` +
+                    `document.execCommand("selectAll",false,null);` +
+                    `document.execCommand("insertText",false,${JSON.stringify(msg)});` +
+                    `await S(600);` +
+                    `const sendBtn=document.querySelector("[aria-label='Send']");` +
+                    `if(sendBtn){sendBtn.click();document.title="[AI]sent-btn";}` +
+                    `else{msgBox.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true,cancelable:true}));document.title="[AI]sent-key";}` +
+                    `}go();})()`;
+                const shellSafeJS = automationJS.replace(/'/g, "'\\''");
+                const urlLit = JSON.stringify(platformUrl);
+                const clipboardOnly = Config.options.ai.sendMessageClipboardOnly === true;
+                const script = clipboardOnly
+                    ? `printf '%s' '${shellSafeJS}' | wl-copy\n` +
+                      `(firefox ${urlLit} >/dev/null 2>&1 &)\n` +
+                      `notify-send -a "Quickshell AI" "send_message" "Script copied. In Firefox: F12 → Console → Ctrl+V → Enter. Tab title shows [AI]… status."`
+                    : `printf '%s' '${shellSafeJS}' | wl-copy\n` +
+                      `(firefox ${urlLit} >/dev/null 2>&1 &)\n` +
+                      `sleep 2\n` +
+                      `qs -p ~/.config/quickshell/ii ipc call sidebarLeft close 2>/dev/null\n` +
+                      `sleep 0.5\n` +
+                      `for _try in 1 2 3; do\n` +
+                      `  hyprctl dispatch focuswindow "class:firefox" 2>/dev/null && break\n` +
+                      `  sleep 0.25\n` +
+                      `done\n` +
+                      `sleep 8\n` +
+                      `hyprctl dispatch focuswindow "class:firefox" 2>/dev/null\n` +
+                      `sleep 0.35\n` +
+                      `wtype -k F12\n` +
+                      `sleep 1.8\n` +
+                      `wtype -M ctrl -k v -m ctrl\n` +
+                      `sleep 0.3\n` +
+                      `wtype -k Return\n` +
+                      `sleep 6\n` +
+                      `wtype -k F12` ;
+                Quickshell.execDetached(["bash", "-c", script]);
+                root._sendMessageIssuedThisTurn = true;
+                addFunctionOutputMessage(name,
+                    clipboardOnly
+                        ? `Script on clipboard; ${platform} opened. User pastes in Firefox console (F12). Do NOT call send_message again.`
+                        : `Browser automation started for ${to} on ${platform}. Do NOT call send_message again for this request. Reply briefly that the user should check the tab when automation finishes.`);
+                requester.makeRequest();
+            } catch(e) { addFunctionOutputMessage(name, "Error in send_message: " + e); requester.makeRequest(); }
+            } else {
+                addFunctionOutputMessage(name, `Unknown platform: '${platform}'. Supported: facebook messenger, telegram, discord, whatsapp, instagram.`);
+                requester.makeRequest();
+            }
         } else if (name === "notify") {
             const title = args.title || "AI Assistant";
             const body = args.body || "";
@@ -2875,18 +4408,36 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             const rawX   = parseFloat(args.x) || 0;
             const rawY   = parseFloat(args.y) || 0;
             const button = (args.button || "left").toLowerCase();
+            const isDouble = args.double === true;
+            const mods = (args.modifiers || "").toLowerCase().trim();
             // Scale coords from screenshot space back to real display space
-            const sx = Math.max(0, Math.min(Math.round(rawX * scale), imgW)) + root.lastScreenshotOffsetX;
-            const sy = Math.max(0, Math.min(Math.round(rawY * scale), imgH)) + root.lastScreenshotOffsetY;
+            const nativeW = Math.round(imgW * scale);
+            const nativeH = Math.round(imgH * scale);
+            const sx = Math.max(0, Math.min(Math.round(rawX * scale), nativeW)) + root.lastScreenshotOffsetX;
+            const sy = Math.max(0, Math.min(Math.round(rawY * scale), nativeH)) + root.lastScreenshotOffsetY;
             const ydoBtn = button === "right" ? "3" : button === "middle" ? "2" : "1";
-            root._lastClickInfo = `click_at (${rawX}, ${rawY})`;
-            addFunctionOutputMessage(name, `Clicking (${rawX}, ${rawY}) → screen (${sx}, ${sy})`);
-            // Move mouse and click, then take a new screenshot automatically
-            const clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            const modLabel = mods ? ` [${mods}]` : "";
+            const dblLabel = isDouble ? " double" : "";
+            root._lastClickInfo = `click_at${dblLabel}${modLabel} (${rawX}, ${rawY})`;
+            addFunctionOutputMessage(name, `${isDouble ? "Double-clicking" : "Clicking"}${modLabel} (${rawX}, ${rawY}) → screen (${sx}, ${sy})`);
+            // Build modifier key press/release commands
+            const modMap = { "ctrl": "29", "shift": "42", "alt": "56", "super": "125" };
+            const modParts = mods ? mods.split("+").filter(m => modMap[m]) : [];
+            const modDown = modParts.map(m => `ydotool key ${modMap[m]}:1`).join(" && ");
+            const modUp = modParts.reverse().map(m => `ydotool key ${modMap[m]}:0`).join(" && ");
+            const clickPart = isDouble
+                ? `ydotool click --button-up --button-down ${ydoBtn} && sleep 0.05 && ydotool click --button-up --button-down ${ydoBtn}`
+                : `ydotool click --button-up --button-down ${ydoBtn}`;
+            // Move mouse and click, with optional modifiers and double-click
+            let clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy}`;
+            if (modDown) clickCmd += ` && ${modDown}`;
+            clickCmd += ` && ${clickPart}`;
+            if (modUp) clickCmd += ` && ${modUp}`;
             root.requestHideSidebars();
             Quickshell.execDetached(["bash", "-c", clickCmd]);
             // After click, auto-take a fresh screenshot so the model can see the result
             Qt.callLater(() => {
+                root._pendingVisionFollowUpKind = "followup";
                 const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
                 const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
                 screenshotProc.targetPath = dest;
@@ -2897,18 +4448,26 @@ CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
 MON_NAME=$(MONITORS="$MONITORS" python3 -c '
-import json,os,sys
+import json,os,sys,subprocess
 mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
 for m in mons:
     if m.get("focused"): print(m.get("name","")); sys.exit()
 if mons: print(mons[0].get("name",""))
 ' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\r')
 if [ -n "$MON_NAME" ]; then
     grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
 else
     grim "$DEST" 2>&1 || exit 1
 fi
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
 import os, json
 dest = os.environ['DEST']
@@ -2957,26 +4516,46 @@ if 0 <= cx_img < W and 0 <= cy_img < H:
     draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
     draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
     draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
-Image.alpha_composite(img, overlay).convert('RGB').save(dest)
-print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
 print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
 SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
 SS_OFFSET_X=\${SS_OFFSET_X:-0}
 SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
-CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
-CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
 GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
 IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
 IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
 GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
 GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
 echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
 echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
 echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
-echo "IMAGE_SCALE:1"
+echo "IMAGE_SCALE:\${SCALE}"
 echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
                 screenshotProc.command = ["bash", "-c", cmd];
@@ -2994,15 +4573,32 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             const rawX    = Math.round(col * (imgW / cols) + (imgW / cols) / 2);
             const rawY    = Math.round(row * (imgH / rows) + (imgH / rows) / 2);
             const button  = (args.button || "left").toLowerCase();
+            const isDouble = args.double === true;
+            const mods = (args.modifiers || "").toLowerCase().trim();
             const ydoBtn  = button === "right" ? "3" : button === "middle" ? "2" : "1";
-            const sx = rawX + root.lastScreenshotOffsetX;
-            const sy = rawY + root.lastScreenshotOffsetY;
-            root._lastClickInfo = `click_cell ${cellNum}`;
-            addFunctionOutputMessage(name, `Clicking cell ${cellNum} (row ${row+1}, col ${col+1}) → screen (${sx}, ${sy})`);
-            const clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy} && ydotool click --button-up --button-down ${ydoBtn}`;
+            const scale   = root.lastScreenshotScale  > 0 ? root.lastScreenshotScale  : 1.0;
+            const sx = Math.round(rawX * scale) + root.lastScreenshotOffsetX;
+            const sy = Math.round(rawY * scale) + root.lastScreenshotOffsetY;
+            const modLabel = mods ? ` [${mods}]` : "";
+            const dblLabel = isDouble ? " double" : "";
+            root._lastClickInfo = `click_cell${dblLabel}${modLabel} ${cellNum}`;
+            addFunctionOutputMessage(name, `${isDouble ? "Double-clicking" : "Clicking"}${modLabel} cell ${cellNum} (row ${row+1}, col ${col+1}) → screen (${sx}, ${sy})`);
+            // Build modifier key press/release commands
+            const modMap = { "ctrl": "29", "shift": "42", "alt": "56", "super": "125" };
+            const modParts = mods ? mods.split("+").filter(m => modMap[m]) : [];
+            const modDown = modParts.map(m => `ydotool key ${modMap[m]}:1`).join(" && ");
+            const modUp = modParts.reverse().map(m => `ydotool key ${modMap[m]}:0`).join(" && ");
+            const clickPart = isDouble
+                ? `ydotool click --button-up --button-down ${ydoBtn} && sleep 0.05 && ydotool click --button-up --button-down ${ydoBtn}`
+                : `ydotool click --button-up --button-down ${ydoBtn}`;
+            let clickCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy}`;
+            if (modDown) clickCmd += ` && ${modDown}`;
+            clickCmd += ` && ${clickPart}`;
+            if (modUp) clickCmd += ` && ${modUp}`;
             root.requestHideSidebars();
             Quickshell.execDetached(["bash", "-c", clickCmd]);
             Qt.callLater(() => {
+                root._pendingVisionFollowUpKind = "followup";
                 const screenshotPath = `${Directories.aiSttTemp}/screenshot.png`;
                 const dest = CF.FileUtils.trimFileProtocol(screenshotPath);
                 screenshotProc.targetPath = dest;
@@ -3013,18 +4609,26 @@ CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
 MON_NAME=$(MONITORS="$MONITORS" python3 -c '
-import json,os,sys
+import json,os,sys,subprocess
 mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
 for m in mons:
     if m.get("focused"): print(m.get("name","")); sys.exit()
 if mons: print(mons[0].get("name",""))
 ' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\r')
 if [ -n "$MON_NAME" ]; then
     grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
 else
     grim "$DEST" 2>&1 || exit 1
 fi
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
 import os, json
 dest = os.environ['DEST']
@@ -3073,26 +4677,46 @@ if 0 <= cx_img < W and 0 <= cy_img < H:
     draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
     draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
     draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
-Image.alpha_composite(img, overlay).convert('RGB').save(dest)
-print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
 print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
 SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
 SS_OFFSET_X=\${SS_OFFSET_X:-0}
 SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
-CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
-CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
 GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
 IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
 IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
 GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
 GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
 echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
 echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
 echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
-echo "IMAGE_SCALE:1"
+echo "IMAGE_SCALE:\${SCALE}"
 echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
                 screenshotProc.command = ["bash", "-c", cmd];
@@ -3190,6 +4814,174 @@ print('Inserted at line ${insertLine}: ${rawPath}')
             }
             commandExecutionProc.shellCommand = shellCmd;
             commandExecutionProc.running = true;
+        } else if (name === "kg_store") {
+            const action = (args.action || "").trim();
+            const kgScript = `"${Directories.aiMemoryPath.replace('memory.md', 'kg.py')}"`;
+            const kgMsg = createFunctionOutputMessage(name, "", false);
+            const kgId = idForMessage(kgMsg);
+            root.messageIDs = [...root.messageIDs, kgId];
+            root.messageByID[kgId] = kgMsg;
+            commandExecutionProc.message = kgMsg;
+            commandExecutionProc.baseMessageContent = kgMsg.content;
+            let kgCmd = "";
+            if (action === "entity") {
+                const eName = args.name || "";
+                const eType = args.entity_type || "thing";
+                const obs = JSON.stringify(args.observations || []);
+                if (!eName) { addFunctionOutputMessage(name, "Error: name is required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} store ${JSON.stringify(eName)} ${JSON.stringify(eType)} ${JSON.stringify(obs)} 2>&1`;
+            } else if (action === "relation") {
+                const from = args.from_entity || "";
+                const rel = args.relation || "";
+                const to = args.to_entity || "";
+                if (!from || !rel || !to) { addFunctionOutputMessage(name, "Error: from_entity, relation, and to_entity are required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} relate ${JSON.stringify(from)} ${JSON.stringify(rel)} ${JSON.stringify(to)} 2>&1`;
+            } else if (action === "observe") {
+                const eName = args.name || "";
+                const obs = JSON.stringify(args.observations || []);
+                if (!eName) { addFunctionOutputMessage(name, "Error: name is required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} observe ${JSON.stringify(eName)} ${JSON.stringify(obs)} 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, "Error: action must be 'entity', 'relation', or 'observe'");
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.shellCommand = kgCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "kg_query") {
+            const action = (args.action || "").trim();
+            const kgScript = `"${Directories.aiMemoryPath.replace('memory.md', 'kg.py')}"`;
+            const kgMsg = createFunctionOutputMessage(name, "", false);
+            const kgId = idForMessage(kgMsg);
+            root.messageIDs = [...root.messageIDs, kgId];
+            root.messageByID[kgId] = kgMsg;
+            commandExecutionProc.message = kgMsg;
+            commandExecutionProc.baseMessageContent = kgMsg.content;
+            let kgCmd = "";
+            if (action === "search") {
+                const query = args.query || "";
+                if (!query) { addFunctionOutputMessage(name, "Error: query is required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} search ${JSON.stringify(query)} 2>&1`;
+            } else if (action === "read") {
+                const eName = args.name || "";
+                kgCmd = eName ? `python3 ${kgScript} read ${JSON.stringify(eName)} 2>&1` : `python3 ${kgScript} read 2>&1`;
+            } else if (action === "delete_entity") {
+                const eName = args.name || "";
+                if (!eName) { addFunctionOutputMessage(name, "Error: name is required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} delete_entity ${JSON.stringify(eName)} 2>&1`;
+            } else if (action === "delete_relation") {
+                const from = args.from_entity || "";
+                const rel = args.relation || "";
+                const to = args.to_entity || "";
+                if (!from || !rel || !to) { addFunctionOutputMessage(name, "Error: from_entity, relation, and to_entity required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} delete_relation ${JSON.stringify(from)} ${JSON.stringify(rel)} ${JSON.stringify(to)} 2>&1`;
+            } else if (action === "delete_observation") {
+                const eName = args.name || "";
+                const obs = args.observation || "";
+                if (!eName || !obs) { addFunctionOutputMessage(name, "Error: name and observation required"); requester.makeRequest(); return; }
+                kgCmd = `python3 ${kgScript} delete_observation ${JSON.stringify(eName)} ${JSON.stringify(obs)} 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, "Error: action must be 'search', 'read', 'delete_entity', 'delete_relation', or 'delete_observation'");
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.shellCommand = kgCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "rag_search") {
+            const query = args.query || "";
+            if (!query) { addFunctionOutputMessage(name, "Error: query is required"); requester.makeRequest(); return; }
+            const limit = Math.min(parseInt(args.limit) || 5, 20);
+            const ragScript = `"${Directories.aiMemoryPath.replace('memory.md', 'rag.py')}"`;
+            const ragMsg = createFunctionOutputMessage(name, "", false);
+            const ragId = idForMessage(ragMsg);
+            root.messageIDs = [...root.messageIDs, ragId];
+            root.messageByID[ragId] = ragMsg;
+            commandExecutionProc.message = ragMsg;
+            commandExecutionProc.baseMessageContent = ragMsg.content;
+            commandExecutionProc.shellCommand = `python3 ${ragScript} search ${JSON.stringify(query)} ${limit} 2>&1`;
+            commandExecutionProc.running = true;
+        } else if (name === "rag_index") {
+            const path = args.path || "";
+            if (!path) { addFunctionOutputMessage(name, "Error: path is required"); requester.makeRequest(); return; }
+            const ragScript = `"${Directories.aiMemoryPath.replace('memory.md', 'rag.py')}"`;
+            const ragMsg = createFunctionOutputMessage(name, "", false);
+            const ragId = idForMessage(ragMsg);
+            root.messageIDs = [...root.messageIDs, ragId];
+            root.messageByID[ragId] = ragMsg;
+            commandExecutionProc.message = ragMsg;
+            commandExecutionProc.baseMessageContent = ragMsg.content;
+            let ragCmd = `python3 ${ragScript} index ${JSON.stringify(path)}`;
+            if (args.extensions) ragCmd += ` --ext=${args.extensions}`;
+            ragCmd += " 2>&1";
+            commandExecutionProc.shellCommand = ragCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "calendar") {
+            const action = (args.action || "today").trim();
+            const calScript = Quickshell.env("HOME") + "/.config/quickshell/ii/scripts/ai/calendar.sh";
+            const calMsg = createFunctionOutputMessage(name, "", false);
+            const calId = idForMessage(calMsg);
+            root.messageIDs = [...root.messageIDs, calId];
+            root.messageByID[calId] = calMsg;
+            commandExecutionProc.message = calMsg;
+            commandExecutionProc.baseMessageContent = calMsg.content;
+            let calCmd = "";
+            if (action === "today") {
+                calCmd = `bash "${calScript}" today 2>&1`;
+            } else if (action === "list") {
+                const days = Math.min(parseInt(args.days) || 3, 30);
+                calCmd = `bash "${calScript}" list ${days} 2>&1`;
+            } else if (action === "now") {
+                calCmd = `bash "${calScript}" now 2>&1`;
+            } else if (action === "add") {
+                const eventArgs = args.event_args || "";
+                if (!eventArgs) { addFunctionOutputMessage(name, "Error: event_args required for add"); requester.makeRequest(); return; }
+                calCmd = `bash "${calScript}" add ${eventArgs} 2>&1`;
+            } else if (action === "search") {
+                const query = args.query || "";
+                if (!query) { addFunctionOutputMessage(name, "Error: query required for search"); requester.makeRequest(); return; }
+                calCmd = `bash "${calScript}" search ${JSON.stringify(query)} 2>&1`;
+            } else if (action === "sync") {
+                calCmd = `bash "${calScript}" sync 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, "Error: action must be 'today', 'list', 'now', 'add', 'search', or 'sync'");
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.shellCommand = calCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "workspace_layout") {
+            const action = (args.action || "current").trim();
+            const layoutScript = Quickshell.env("HOME") + "/.config/quickshell/ii/scripts/ai/workspace-layout.sh";
+            const wlMsg = createFunctionOutputMessage(name, "", false);
+            const wlId = idForMessage(wlMsg);
+            root.messageIDs = [...root.messageIDs, wlId];
+            root.messageByID[wlId] = wlMsg;
+            commandExecutionProc.message = wlMsg;
+            commandExecutionProc.baseMessageContent = wlMsg.content;
+            let wlCmd = "";
+            if (action === "current") {
+                wlCmd = `bash "${layoutScript}" current 2>&1`;
+            } else if (action === "save") {
+                const lname = args.name || "";
+                if (!lname) { addFunctionOutputMessage(name, "Error: name required for save"); requester.makeRequest(); return; }
+                wlCmd = `bash "${layoutScript}" save ${JSON.stringify(lname)} 2>&1`;
+            } else if (action === "restore") {
+                const lname = args.name || "";
+                if (!lname) { addFunctionOutputMessage(name, "Error: name required for restore"); requester.makeRequest(); return; }
+                wlCmd = `bash "${layoutScript}" restore ${JSON.stringify(lname)} 2>&1`;
+            } else if (action === "list") {
+                wlCmd = `bash "${layoutScript}" list 2>&1`;
+            } else if (action === "delete") {
+                const lname = args.name || "";
+                if (!lname) { addFunctionOutputMessage(name, "Error: name required for delete"); requester.makeRequest(); return; }
+                wlCmd = `bash "${layoutScript}" delete ${JSON.stringify(lname)} 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, "Error: action must be 'save', 'restore', 'list', 'delete', or 'current'");
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.shellCommand = wlCmd;
+            commandExecutionProc.running = true;
         } else if (name === "scroll") {
             const dir = (args.direction || "down").toLowerCase();
             const amount = Math.min(Math.max(parseInt(args.amount) || 3, 1), 20);
@@ -3201,6 +4993,115 @@ print('Inserted at line ${insertLine}: ${rawPath}')
             Quickshell.execDetached(["bash", "-c", `ydotool mousescroll --axis-x ${ax} --axis-y ${ay}`]);
             addFunctionOutputMessage(name, `Scrolled ${dir} ${amount} step(s)`);
             requester.makeRequest();
+        } else if (name === "drag_to") {
+            const imgW  = root.lastScreenshotWidth  > 0 ? root.lastScreenshotWidth  : 1920;
+            const imgH  = root.lastScreenshotHeight > 0 ? root.lastScreenshotHeight : 1080;
+            const scale = root.lastScreenshotScale  > 0 ? root.lastScreenshotScale  : 1.0;
+            const rawX1 = parseFloat(args.x1) || 0;
+            const rawY1 = parseFloat(args.y1) || 0;
+            const rawX2 = parseFloat(args.x2) || 0;
+            const rawY2 = parseFloat(args.y2) || 0;
+            const button = (args.button || "left").toLowerCase();
+            const nativeW = Math.round(imgW * scale);
+            const nativeH = Math.round(imgH * scale);
+            const sx1 = Math.max(0, Math.min(Math.round(rawX1 * scale), nativeW)) + root.lastScreenshotOffsetX;
+            const sy1 = Math.max(0, Math.min(Math.round(rawY1 * scale), nativeH)) + root.lastScreenshotOffsetY;
+            const sx2 = Math.max(0, Math.min(Math.round(rawX2 * scale), nativeW)) + root.lastScreenshotOffsetX;
+            const sy2 = Math.max(0, Math.min(Math.round(rawY2 * scale), nativeH)) + root.lastScreenshotOffsetY;
+            const ydoBtn = button === "right" ? "3" : "1";
+            root._lastClickInfo = `drag_to (${rawX1},${rawY1}) → (${rawX2},${rawY2})`;
+            addFunctionOutputMessage(name, `Dragging (${rawX1},${rawY1}) → (${rawX2},${rawY2}) screen (${sx1},${sy1}) → (${sx2},${sy2})`);
+            const dragCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx1} -y ${sy1} && sleep 0.1 && ydotool click --button-down ${ydoBtn} && sleep 0.1 && ydotool mousemove --absolute -x ${sx2} -y ${sy2} && sleep 0.1 && ydotool click --button-up ${ydoBtn}`;
+            root.requestHideSidebars();
+            Quickshell.execDetached(["bash", "-c", dragCmd]);
+            triggerAutoScreenshot(1000);
+        } else if (name === "hover") {
+            const imgW  = root.lastScreenshotWidth  > 0 ? root.lastScreenshotWidth  : 1920;
+            const imgH  = root.lastScreenshotHeight > 0 ? root.lastScreenshotHeight : 1080;
+            const scale = root.lastScreenshotScale  > 0 ? root.lastScreenshotScale  : 1.0;
+            const rawX  = parseFloat(args.x) || 0;
+            const rawY  = parseFloat(args.y) || 0;
+            const nativeW = Math.round(imgW * scale);
+            const nativeH = Math.round(imgH * scale);
+            const sx = Math.max(0, Math.min(Math.round(rawX * scale), nativeW)) + root.lastScreenshotOffsetX;
+            const sy = Math.max(0, Math.min(Math.round(rawY * scale), nativeH)) + root.lastScreenshotOffsetY;
+            root._lastClickInfo = `hover (${rawX}, ${rawY})`;
+            addFunctionOutputMessage(name, `Hovering at (${rawX}, ${rawY}) → screen (${sx}, ${sy})`);
+            const hoverCmd = `sleep 0.15 && ydotool mousemove --absolute -x ${sx} -y ${sy}`;
+            root.requestHideSidebars();
+            Quickshell.execDetached(["bash", "-c", hoverCmd]);
+            triggerAutoScreenshot(800);
+        } else if (name === "read_screen_text") {
+            const hasRegion = args.x !== undefined && args.y !== undefined && args.width !== undefined && args.height !== undefined;
+            const scale = root.lastScreenshotScale > 0 ? root.lastScreenshotScale : 1.0;
+            let grimArgs = "";
+            if (hasRegion) {
+                const rx = Math.round((parseFloat(args.x) || 0) * scale) + root.lastScreenshotOffsetX;
+                const ry = Math.round((parseFloat(args.y) || 0) * scale) + root.lastScreenshotOffsetY;
+                const rw = Math.round((parseFloat(args.width) || 200) * scale);
+                const rh = Math.round((parseFloat(args.height) || 100) * scale);
+                grimArgs = `-g "${rx},${ry} ${rw}x${rh}"`;
+            } else {
+                // Full active monitor
+                grimArgs = "";
+            }
+            const ocrMsg = createFunctionOutputMessage(name, "", false);
+            const ocrId = idForMessage(ocrMsg);
+            root.messageIDs = [...root.messageIDs, ocrId];
+            root.messageByID[ocrId] = ocrMsg;
+            commandExecutionProc.message = ocrMsg;
+            commandExecutionProc.baseMessageContent = ocrMsg.content;
+            const tmpImg = "/tmp/quickshell/ai/ocr_region.png";
+            let ocrCmd = "";
+            if (hasRegion) {
+                ocrCmd = `grim ${grimArgs} "${tmpImg}" 2>&1 && tesseract "${tmpImg}" - 2>/dev/null || echo "(OCR failed)"`;
+            } else {
+                // Get active monitor name first
+                ocrCmd = `MON=$(hyprctl monitors -j 2>/dev/null | python3 -c "
+import json,sys,subprocess
+mons=json.loads(sys.stdin.read())
+try:
+    aw=json.loads(subprocess.run(['hyprctl','activewindow','-j'],capture_output=True,text=True).stdout or '{}')
+    mid=aw.get('monitor',-1)
+    if mid>=0:
+        for m in mons:
+            if m.get('id')==mid: print(m.get('name','')); sys.exit()
+except: pass
+for m in mons:
+    if m.get('focused'): print(m.get('name','')); sys.exit()
+if mons: print(mons[0].get('name',''))
+" 2>/dev/null) && grim -o "$MON" "${tmpImg}" 2>&1 && tesseract "${tmpImg}" - 2>/dev/null || echo "(OCR failed)"`;
+            }
+            commandExecutionProc.shellCommand = ocrCmd;
+            commandExecutionProc.running = true;
+        } else if (name === "manage_tabs") {
+            const action = (args.action || "").toLowerCase().trim();
+            const index = Math.min(Math.max(parseInt(args.index) || 1, 1), 9);
+            const keyMap = {
+                "next": "29:1 15:1 15:0 29:0",      // ctrl+tab
+                "prev": "29:1 42:1 15:1 15:0 42:0 29:0", // ctrl+shift+tab
+                "close": "29:1 17:1 17:0 29:0",     // ctrl+w
+                "new": "29:1 20:1 20:0 29:0",       // ctrl+t
+                "reopen": "29:1 42:1 20:1 20:0 42:0 29:0" // ctrl+shift+t
+            };
+            if (action === "goto") {
+                // ctrl+1 through ctrl+9 — key codes: 1=2, 2=3, ..., 9=10
+                const keyCode = index + 1;
+                Quickshell.execDetached(["bash", "-c", `ydotool key 29:1 ${keyCode}:1 ${keyCode}:0 29:0`]);
+                addFunctionOutputMessage(name, `Switched to tab ${index}`);
+            } else if (keyMap[action]) {
+                Quickshell.execDetached(["bash", "-c", `ydotool key ${keyMap[action]}`]);
+                addFunctionOutputMessage(name, `Tab action: ${action}`);
+            } else {
+                addFunctionOutputMessage(name, `Unknown action: '${action}'. Use: next, prev, close, goto, new, reopen`);
+            }
+            requester.makeRequest();
+        } else if (name === "wait_and_screenshot") {
+            const seconds = Math.min(Math.max(parseFloat(args.seconds) || 3, 1), 15);
+            const reason = args.reason || "waiting for UI update";
+            addFunctionOutputMessage(name, `Waiting ${seconds}s: ${reason}`);
+            root.requestHideSidebars();
+            triggerAutoScreenshot(seconds * 1000);
         } else if (name === "read_clipboard_text") {
             const clipMsg = createFunctionOutputMessage(name, "", false);
             const clipId = idForMessage(clipMsg);
@@ -3225,13 +5126,25 @@ print('Inserted at line ${insertLine}: ${rawPath}')
             const app = (args.app || "").toLowerCase().replace(/[_\s]/g, "");
             const query = args.query || "";
             if (!query) { addFunctionOutputMessage(name, "Invalid: query is required"); requester.makeRequest(); return; }
+            // Route native music apps through oi-task for reliable code-based playback
+            const nativeApps = ["spotify", "youtubemusic", "soundcloud"];
+            if (nativeApps.includes(app)) {
+                const responseMessage = createFunctionOutputMessage(name, "", false);
+                const id = idForMessage(responseMessage);
+                root.messageIDs = [...root.messageIDs, id];
+                root.messageByID[id] = responseMessage;
+                commandExecutionProc.message = responseMessage;
+                commandExecutionProc.baseMessageContent = responseMessage.content;
+                const escapedQuery = query.replace(/'/g, "'\\''");
+                const escapedApp = args.app || app;
+                commandExecutionProc.shellCommand = `oi-task 'Search for "${escapedQuery}" on ${escapedApp} and play it. Use playerctl or dbus to control the app.'`;
+                commandExecutionProc.running = true;
+                return;
+            }
             const encoded = encodeURIComponent(query);
             let uri;
             switch (app) {
-                case "spotify":       uri = `spotify:search:${encoded}`; break;
                 case "youtube":       uri = `https://youtube.com/search?q=${encoded}`; break;
-                case "youtubemusic":  uri = `https://music.youtube.com/search?q=${encoded}`; break;
-                case "soundcloud":    uri = `https://soundcloud.com/search?q=${encoded}`; break;
                 case "twitch":        uri = `https://twitch.tv/search?term=${encoded}`; break;
                 case "bandcamp":      uri = `https://bandcamp.com/search?q=${encoded}`; break;
                 case "reddit":        uri = `https://reddit.com/search?q=${encoded}`; break;
@@ -3250,15 +5163,8 @@ print('Inserted at line ${insertLine}: ${rawPath}')
                 default: uri = `https://google.com/search?q=${encoded}+site:${app}`; break;
             }
             Quickshell.execDetached(["xdg-open", uri]);
-            // For native apps (Spotify etc), auto-screenshot after load so AI can click results visually
-            const isNativeApp = ["spotify"].includes(app);
-            if (isNativeApp) {
-                addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}" — taking screenshot to show results...`);
-                nativeAppSearchTimer.restart();
-            } else {
-                addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}"`);
-                requester.makeRequest();
-            }
+            addFunctionOutputMessage(name, `Searching ${args.app} for: "${query}"`);
+            requester.makeRequest();
         } else if (name === "read_url") {
             const url = (args.url || "").trim();
             if (!url) { addFunctionOutputMessage(name, "Error: no URL provided"); requester.makeRequest(); return; }
@@ -3278,10 +5184,14 @@ class ElemParser(HTMLParser):
         super().__init__()
         self.results = []
         self.title = ""
+        self.text_parts = []
         self._in_title = False
-        self._skip_tags = {"script","style","noscript","svg","head"}
+        self._skip_tags = {"script","style","noscript","svg","head","nav","footer","header"}
         self._skip_depth = 0
         self._interactive = {"input","button","select","textarea","a","form","label"}
+        self._content_tags = {"p","h1","h2","h3","h4","h5","h6","li","td","th","span","div","article","section","blockquote","figcaption","strong","em","b","i"}
+        self._in_content = 0
+        self._cur_tag = ""
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -3291,6 +5201,9 @@ class ElemParser(HTMLParser):
         if self._skip_depth: return
         if tag == "title":
             self._in_title = True
+        if tag in self._content_tags:
+            self._in_content += 1
+            self._cur_tag = tag
         if tag in self._interactive:
             parts = [tag]
             for k in ("id","name","type","placeholder","href","value","aria-label","for"):
@@ -3303,16 +5216,37 @@ class ElemParser(HTMLParser):
             self._skip_depth -= 1
         if tag == "title":
             self._in_title = False
+        if tag in self._content_tags and self._in_content:
+            self._in_content -= 1
+            if tag in ("p","h1","h2","h3","h4","h5","h6","li","blockquote"):
+                self.text_parts.append("")  # paragraph break
 
     def handle_data(self, data):
         if self._in_title:
             self.title += data
+        if self._in_content and not self._skip_depth:
+            text = data.strip()
+            if text and len(text) > 1:
+                self.text_parts.append(text)
 
 html = sys.stdin.read()
 p = ElemParser()
 p.feed(html)
 print(f"Page: {p.title.strip()}")
 print(f"URL: ${url.replace(/'/g, "'\\''")}")
+
+# Page text content (truncated to ~3000 chars for context window)
+text = " ".join(t for t in p.text_parts if t).strip()
+# Collapse whitespace
+text = re.sub(r'\s+', ' ', text)
+if text:
+    print("")
+    print(f"Content ({len(text)} chars):")
+    print(text[:3000])
+    if len(text) > 3000:
+        print(f"... truncated ({len(text)} total chars)")
+
+print("")
 print(f"Elements ({len(p.results)}):")
 for e in p.results[:80]:
     print(" ", e)
@@ -3325,43 +5259,56 @@ PYEOF
         } else if (name === "execute_js") {
             const js = (args.code || "").trim();
             if (!js) { addFunctionOutputMessage(name, "Error: no JS code provided"); requester.makeRequest(); return; }
-            const b64 = btoa(unescape(encodeURIComponent(js)));
-            const jsUrl = `javascript:eval(atob('${b64}'))`;
+            const shellSafeJS = js.replace(/'/g, "'\\''");
             addFunctionOutputMessage(name, `Executing JS in browser...`);
-            // Focus address bar, type JS URL, press Enter
-            const execCmd = `
-sleep 0.1
-wtype -M ctrl l -m ctrl
-sleep 0.15
-wtype -s 20 ${JSON.stringify(jsUrl)}
-sleep 0.05
-wtype -k return
+            // Copy JS to clipboard, open DevTools console, paste and run, then close console
+            const execCmd = `printf '%s' '${shellSafeJS}' | wl-copy
+qs -p ~/.config/quickshell/ii ipc call sidebarLeft close 2>/dev/null
+sleep 0.5
+hyprctl dispatch focuswindow "class:firefox" 2>/dev/null
+sleep 0.5
+wtype -k F12
+sleep 1.5
+wtype -M ctrl -k v -m ctrl
+sleep 0.3
+wtype -k Return
+sleep 3
+wtype -k F12
 `;
             Quickshell.execDetached(["bash", "-c", execCmd]);
-            // Auto-screenshot after JS has time to run (2s delay)
+            // Auto-screenshot after JS and console automation have time to complete (~7s total)
             Qt.callLater(() => {
+                root._pendingVisionFollowUpKind = "execute_js";
                 const dest = "/tmp/quickshell/ai/screenshot.png";
                 const cmd = `
 mkdir -p /tmp/quickshell/ai
-sleep 2
+sleep 7
 DEST="${dest}"
 MONITORS=$(hyprctl monitors -j 2>/dev/null | tr -d '\n' || echo '[]')
 CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
 MON_NAME=$(MONITORS="$MONITORS" python3 -c '
-import json,os,sys
+import json,os,sys,subprocess
 mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
 for m in mons:
     if m.get("focused"): print(m.get("name","")); sys.exit()
 if mons: print(mons[0].get("name",""))
 ' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\r')
 if [ -n "$MON_NAME" ]; then
     grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
 else
     grim "$DEST" 2>&1 || exit 1
 fi
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
 import os, json
 dest = os.environ['DEST']
@@ -3407,26 +5354,46 @@ if 0 <= cx_img < W and 0 <= cy_img < H:
     draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
     draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
     draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
-Image.alpha_composite(img, overlay).convert('RGB').save(dest)
-print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
 print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
 SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
 SS_OFFSET_X=\${SS_OFFSET_X:-0}
 SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
-CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
-CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
 GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
 IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
 IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
 GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
 GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
 echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
 echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
 echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
-echo "IMAGE_SCALE:1"
+echo "IMAGE_SCALE:\${SCALE}"
 echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
                 screenshotProc.targetPath = dest;
@@ -3438,10 +5405,20 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
             return;
         } else if (name === "show_plan") {
             root._turnHadPlan = true;
-            const title = args.title || "Task Plan";
-            const steps = args.steps || [];
-            const stepsText = steps.map((s, i) => `${i + 1}. **${s.description}**${s.tool ? ` *(${s.tool})*` : ""}`).join("\n");
-            const approveCmd = `echo "Plan approved — executing ${steps.length} step(s)"`;
+            const title = args.title || args.plan || args.task || "Task Plan";
+            // Normalize steps: handle array, string, or missing
+            let steps = args.steps || args.plan_steps || [];
+            if (typeof steps === "string") {
+                // Model sent steps as a string — split on newlines or numbered lines
+                steps = steps.split(/\n|(?=\d+\.\s)/).filter(s => s.trim()).map(s => ({ description: s.replace(/^\d+\.\s*/, "").trim() }));
+            }
+            if (!Array.isArray(steps)) steps = [];
+            // Normalize step objects — model might send strings instead of objects
+            steps = steps.map(s => typeof s === "string" ? { description: s } : s);
+            const stepsText = steps.length > 0
+                ? steps.map((s, i) => `${i + 1}. **${s.description || s.step || JSON.stringify(s)}**${s.tool ? ` *(${s.tool})*` : ""}`).join("\n")
+                : `*${title}*`;
+            const approveCmd = `echo "Plan approved — proceed with the task"`;
             const contentToAppend = `\n\n### 📋 ${title}\n\n${stepsText}\n\n\`\`\`command\n${approveCmd}\n\`\`\``;
             message.rawContent += contentToAppend;
             message.content += contentToAppend;
@@ -3513,11 +5490,24 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
                 root.lastGridCols = gridCols;
                 root.lastGridRows = gridRows;
 
+                if (imgW <= 0 || imgH <= 0) {
+                    const rawPreview = this.text.length > 1200 ? this.text.substring(0, 1200) + "…" : this.text;
+                    root._lastClickInfo = "";
+                    root.pendingFilePath = "";
+                    addFunctionOutputMessage("take_screenshot",
+                        `Screenshot failed (invalid size ${imgW}×${imgH}). Usually grim wrote an empty/invalid file, Python could not read it, or GRID_META was missing from script output. Verify \`grim\`, Pillow, and Hyprland monitor names.\n\n--- Script output (debug) ---\n${rawPreview}`);
+                    requester.makeRequest();
+                    return;
+                }
+
                 const cursorInfo = curX >= 0 ? ` Cursor at (${curX}, ${curY}).` : "";
                 const gridInfo = ` Grid: ${gridCols}×${gridRows} (cell size ${(imgW/gridCols)|0}×${(imgH/gridRows)|0}px).`;
-                const evalHint = root._lastClickInfo.length > 0
-                    ? ` Previous action: ${root._lastClickInfo}. CHECK: did the UI change as expected? If not, try a different approach.`
-                    : " Analyze the screenshot now.";
+                const isAutoFollowUp = (root._pendingVisionFollowUpKind === "execute_js" || root._pendingVisionFollowUpKind === "followup");
+                const evalHint = isAutoFollowUp
+                    ? " This is an automatic follow-up screenshot. Your action is complete — STOP and respond to the user in text. Do NOT call any more tools unless something clearly went wrong."
+                    : root._lastClickInfo.length > 0
+                        ? ` Previous action: ${root._lastClickInfo}. CHECK: did the UI change as expected? If not, try a different approach.`
+                        : " Analyze the screenshot now.";
                 root._lastClickInfo = "";
                 root.pendingFilePath = screenshotProc.targetPath;
                 addFunctionOutputMessage("take_screenshot", `Screenshot taken (${imgW}×${imgH}).${cursorInfo}${gridInfo}${evalHint}`);
@@ -3550,6 +5540,7 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
                 "functionName": message.functionName,
                 "functionCall": message.functionCall,
                 "functionResponse": message.functionResponse,
+                "toolCallId": message.toolCallId,
                 "visibleToUser": message.visibleToUser,
             })
         })
@@ -3621,6 +5612,15 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
         }
     }
 
+    Process {
+        id: activityContextProc
+        running: true
+        command: ["bash", Quickshell.env("HOME") + "/.config/quickshell/ii/scripts/ai/activity-context.sh"]
+        stdout: StdioCollector {
+            onStreamFinished: root.activityContext = this.text.trim()
+        }
+    }
+
     Timer {
         id: contextRefreshTimer
         running: true
@@ -3629,6 +5629,7 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
         onTriggered: {
             windowListProc.running = true;
             mediaContextProc.running = true;
+            activityContextProc.running = true;
         }
     }
 
@@ -3638,6 +5639,7 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
         interval: 2500
         repeat: false
         onTriggered: {
+            root._pendingVisionFollowUpKind = "followup";
             const dest = CF.FileUtils.trimFileProtocol(`${Directories.aiSttTemp}/screenshot.png`);
             const cmd = `
 DEST="${dest}"
@@ -3646,18 +5648,26 @@ CURSOR=$(hyprctl cursorpos 2>/dev/null || echo "0, 0")
 CX=$(echo "\${CURSOR}" | awk '{gsub(/,/,"",$1); print $1}')
 CY=$(echo "\${CURSOR}" | awk '{print $2}')
 MON_NAME=$(MONITORS="$MONITORS" python3 -c '
-import json,os,sys
+import json,os,sys,subprocess
 mons=json.loads(os.environ.get("MONITORS","[]"))
+try:
+    aw=json.loads(subprocess.run(["hyprctl","activewindow","-j"],capture_output=True,text=True).stdout or "{}")
+    mid=aw.get("monitor",-1)
+    if mid>=0:
+        for m in mons:
+            if m.get("id")==mid: print(m.get("name","")); sys.exit()
+except: pass
 for m in mons:
     if m.get("focused"): print(m.get("name","")); sys.exit()
 if mons: print(mons[0].get("name",""))
 ' 2>/dev/null || echo "")
+MON_NAME=$(echo "$MON_NAME" | head -n1 | tr -d '\r')
 if [ -n "$MON_NAME" ]; then
     grim -o "$MON_NAME" "$DEST" 2>&1 || exit 1
 else
     grim "$DEST" 2>&1 || exit 1
 fi
-META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 << 'PYEOF'
+META=$(DEST=$DEST CX=\${CX} CY=\${CY} MONITORS="$MONITORS" MON_NAME="$MON_NAME" python3 2>&1 << 'PYEOF'
 from PIL import Image, ImageDraw, ImageFont
 import os, json
 dest = os.environ['DEST']
@@ -3703,26 +5713,46 @@ if 0 <= cx_img < W and 0 <= cy_img < H:
     draw.ellipse([cx_img-r,cy_img-r,cx_img+r,cy_img+r], outline=(255,60,60,230), width=3)
     draw.line([cx_img-26,cy_img,cx_img+26,cy_img], fill=(255,60,60,230), width=2)
     draw.line([cx_img,cy_img-26,cx_img,cy_img+26], fill=(255,60,60,230), width=2)
-Image.alpha_composite(img, overlay).convert('RGB').save(dest)
-print(f"GRID_META:{W}:{H}:{cols}:{rows}")
+cx_in_bounds = 0 <= cx_img < W and 0 <= cy_img < H
+composite = Image.alpha_composite(img, overlay).convert('RGB')
+MAX_W = 1920
+sf = 1.0
+if W > MAX_W:
+    sf = W / MAX_W
+    new_h = round(H * MAX_W / W)
+    composite = composite.resize((MAX_W, new_h), Image.LANCZOS)
+    W_out, H_out = MAX_W, new_h
+else:
+    W_out, H_out = W, H
+composite.save(dest)
+cx_s = round(cx_img / sf) if cx_in_bounds else -1
+cy_s = round(cy_img / sf) if cx_in_bounds else -1
+print(f"GRID_META:{W_out}:{H_out}:{cols}:{rows}")
 print(f"SCREENSHOT_OFFSET:{off_x}:{off_y}")
+print(f"IMG_SCALE:{sf:.6f}")
+print(f"CURSOR_S:{cx_s}:{cy_s}")
 PYEOF
 )
 SS_OFFSET_X=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f2)
 SS_OFFSET_Y=$(echo "\${META}" | grep "^SCREENSHOT_OFFSET:" | cut -d: -f3)
 SS_OFFSET_X=\${SS_OFFSET_X:-0}
 SS_OFFSET_Y=\${SS_OFFSET_Y:-0}
-CURSOR_SS_X=$((\${CX} - \${SS_OFFSET_X}))
-CURSOR_SS_Y=$((\${CY} - \${SS_OFFSET_Y}))
 GRID_LINE=$(echo "\${META}" | grep "^GRID_META:")
 IMG_W=$(echo "\${GRID_LINE}" | cut -d: -f2)
 IMG_H=$(echo "\${GRID_LINE}" | cut -d: -f3)
 GRID_COLS=$(echo "\${GRID_LINE}" | cut -d: -f4)
 GRID_ROWS=$(echo "\${GRID_LINE}" | cut -d: -f5)
+SCALE=$(echo "\${META}" | grep "^IMG_SCALE:" | cut -d: -f2)
+SCALE=\${SCALE:-1.0}
+CURSOR_LINE=$(echo "\${META}" | grep "^CURSOR_S:")
+CURSOR_SS_X=$(echo "\${CURSOR_LINE}" | cut -d: -f2)
+CURSOR_SS_Y=$(echo "\${CURSOR_LINE}" | cut -d: -f3)
+CURSOR_SS_X=\${CURSOR_SS_X:--1}
+CURSOR_SS_Y=\${CURSOR_SS_Y:--1}
 echo "CURSOR_POS:\${CURSOR_SS_X}:\${CURSOR_SS_Y}"
 echo "GRID:\${GRID_COLS}:\${GRID_ROWS}"
 echo "IMAGE_SIZE:\${IMG_W}:\${IMG_H}"
-echo "IMAGE_SCALE:1"
+echo "IMAGE_SCALE:\${SCALE}"
 echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
 `;
             root.requestHideSidebars();
@@ -3815,6 +5845,7 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
                     "functionName": message.functionName,
                     "functionCall": message.functionCall,
                     "functionResponse": message.functionResponse,
+                    "toolCallId": message.toolCallId,
                     "visibleToUser": message.visibleToUser,
                 });
             }

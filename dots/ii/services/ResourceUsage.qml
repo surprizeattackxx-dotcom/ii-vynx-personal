@@ -69,7 +69,7 @@ Singleton {
     }
 
 	Timer {
-		interval: 1
+		interval: Config.options?.resources?.updateInterval ?? 3000
         running: true 
         repeat: true
 		onTriggered: {
@@ -126,7 +126,6 @@ Singleton {
             previousDiskStats = { read: totalRead, written: totalWritten, timestamp: now }
 
             root.updateHistories()
-            interval = Config.options?.resources?.updateInterval ?? 3000
         }
 	}
 

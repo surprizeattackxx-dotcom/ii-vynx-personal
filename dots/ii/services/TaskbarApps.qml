@@ -20,10 +20,13 @@ Singleton {
         }
     }
 
+    property list<var> _prevApps: []
     property list<var> apps: {
+        for (const old of root._prevApps)
+            if (old) old.destroy();
+
         var map = new Map();
 
-        // Pinned apps
         const pinnedApps = Config.options?.dock.pinnedApps ?? [];
         for (const appId of pinnedApps) {
             if (!map.has(appId.toLowerCase())) map.set(appId.toLowerCase(), ({
@@ -32,15 +35,12 @@ Singleton {
             }));
         }
 
-        // Separator
         if (pinnedApps.length > 0) {
             map.set("SEPARATOR", { pinned: false, toplevels: [] });
         }
 
-        // Ignored apps
         const ignoredRegexStrings = Config.options?.dock.ignoredAppRegexes ?? [];
         const ignoredRegexes = ignoredRegexStrings.map(pattern => new RegExp(pattern, "i"));
-        // Open windows
         for (const toplevel of ToplevelManager.toplevels.values) {
             if (ignoredRegexes.some(re => re.test(toplevel.appId))) continue;
             if (!map.has(toplevel.appId.toLowerCase())) map.set(toplevel.appId.toLowerCase(), ({
@@ -53,9 +53,10 @@ Singleton {
         var values = [];
 
         for (const [key, value] of map) {
-            values.push(appEntryComp.createObject(null, { appId: key, toplevels: value.toplevels, pinned: value.pinned }));
+            values.push(appEntryComp.createObject(root, { appId: key, toplevels: value.toplevels, pinned: value.pinned }));
         }
 
+        root._prevApps = values;
         return values;
     }
 

@@ -218,10 +218,12 @@ PanelWindow {
         stdout: StdioCollector {
             id: imageDimensionCollector
             onStreamFinished: {
-                imageRegions = RegionFunctions.filterImageRegions(
-                    JSON.parse(imageDimensionCollector.text),
-                    root.windowRegions
-                );
+                try {
+                    imageRegions = RegionFunctions.filterImageRegions(
+                        JSON.parse(imageDimensionCollector.text),
+                        root.windowRegions
+                    );
+                } catch (e) { return; }
             }
         }
     }
@@ -252,6 +254,7 @@ PanelWindow {
         if (root.regionWidth <= 0 || root.regionHeight <= 0) {
             console.warn("[Region Selector] Invalid region size, skipping snip.");
             root.dismiss();
+            return;
         }
 
         // Clamp region to screen bounds

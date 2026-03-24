@@ -57,8 +57,8 @@ if __name__ == "__main__":
         'progress.indicator.text.color': 'onBackground',
         'text.normal.color': 'onBackground',
         'text.focus.color': 'onBackground',
-        'text.press.color': 'onsecondarycontainer',
-        'text.toggle.color': 'onsecondarycontainer',
+        'text.press.color': 'onSecondaryContainer',
+        'text.toggle.color': 'onSecondaryContainer',
         'text.disabled.color': 'surfaceDim',
 
 

@@ -10,20 +10,61 @@ ApiStrategy {
     }
 
     function buildRequestData(model: AiModel, messages, systemPrompt: string, temperature: real, tools: list<var>, filePath: string) {
+        const mappedMessages = messages.map(message => {
+            // Tool result — must use role:"tool" with tool_call_id (OpenAI spec)
+            if (message.functionName && message.functionName.length > 0) {
+                return {
+                    "role": "tool",
+                    "tool_call_id": message.toolCallId || `call_${message.functionName}`,
+                    "content": message.functionResponse || "",
+                };
+            }
+            // Assistant message that made a tool call — must include tool_calls array
+            if (message.role === "assistant" && message.functionCall && message.functionCall.name) {
+                const callId = message.toolCallId || `call_${message.functionCall.name}`;
+                return {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": callId,
+                        "type": "function",
+                        "function": {
+                            "name": message.functionCall.name,
+                            "arguments": JSON.stringify(message.functionCall.args || {}),
+                        }
+                    }]
+                };
+            }
+            // Regular user/assistant message
+            return {
+                "role": message.role,
+                "content": message.rawContent,
+            };
+        });
+        // Dedupe consecutive duplicate tool results (same tool_call_id) — seen in logs when
+        // placeholder + final output both exist; APIs reject or ignore duplicate tool rows.
+        const dedupedMessages = [];
+        for (let i = 0; i < mappedMessages.length; i++) {
+            const m = mappedMessages[i];
+            const last = dedupedMessages.length > 0 ? dedupedMessages[dedupedMessages.length - 1] : null;
+            if (m.role === "tool" && last && last.role === "tool" && m.tool_call_id === last.tool_call_id) {
+                const a = last.content || "";
+                const b = m.content || "";
+                dedupedMessages[dedupedMessages.length - 1] = b.length >= a.length ? m : last;
+                continue;
+            }
+            dedupedMessages.push(m);
+        }
         let baseData = {
             "model": model.model,
             "messages": [
                 {role: "system", content: systemPrompt},
-                ...messages.map(message => {
-                    return {
-                        "role": message.role,
-                        "content": message.rawContent,
-                    }
-                }),
+                ...dedupedMessages
             ],
             "stream": true,
             "tools": tools,
             "tool_choice": (tools && tools.length > 0) ? "auto" : "none",
+            "parallel_tool_calls": false,
             "temperature": temperature,
             "max_tokens": 8192,
         };
@@ -81,13 +122,12 @@ ApiStrategy {
             message.content += newContent;
             message.rawContent += newContent;
 
-            // Tool call handling (accumulate across streaming chunks)
-            // NOTE: always reassign the whole object (not just mutate properties)
-            // because QML property var may return a copy on read, causing mutations to be lost.
+            // Tool call handling — accumulate across streaming chunks, capture ID
             const toolCallDelta = dataJson.choices?.[0]?.delta?.tool_calls?.[0];
             if (toolCallDelta) {
-                const cur = pendingToolCall || { name: "", arguments: "" };
+                const cur = pendingToolCall || { id: "", name: "", arguments: "" };
                 pendingToolCall = {
+                    id: cur.id || toolCallDelta.id || "",
                     name: (cur.name || toolCallDelta.function?.name || ""),
                     arguments: cur.arguments + (toolCallDelta.function?.arguments || ""),
                 };
@@ -101,6 +141,7 @@ ApiStrategy {
                     const msgToolCall = dataJson.choices?.[0]?.message?.tool_calls?.[0];
                     if (msgToolCall?.function?.name) {
                         pendingToolCall = {
+                            id: msgToolCall.id || "",
                             name: msgToolCall.function.name,
                             arguments: msgToolCall.function.arguments || "",
                         };
@@ -111,7 +152,8 @@ ApiStrategy {
                     try { parsedArgs = JSON.parse(pendingToolCall.arguments); } catch(e) {
                         console.log("[AI] Failed to parse tool args:", e, "raw:", pendingToolCall.arguments);
                     }
-                    const call = { name: pendingToolCall.name, args: parsedArgs };
+                    const callId = pendingToolCall.id || `call_${pendingToolCall.name}_${Date.now()}`;
+                    const call = { id: callId, name: pendingToolCall.name, args: parsedArgs };
                     pendingToolCall = null;
                     return { functionCall: call };
                 }

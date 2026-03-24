@@ -197,12 +197,6 @@ save_wallpaper_copy() {
     echo "[switchwall] Saved wallpaper copy → $save_dir/${name}${i}.${ext}"
 }
 
-categorize_wallpaper() {
-    img_cat=$("$SCRIPT_DIR/../ai/gemini-categorize-wallpaper.sh" "$1")
-    # notify-send "Wallpaper category" "$img_cat"
-    echo "$img_cat" > "$STATE_DIR/user/generated/wallpaper/category.txt"
-}
-
 switch() {
     imgpath="$1"
     mode_flag="$2"
@@ -228,7 +222,6 @@ switch() {
     cursorposx=$(bc <<< "scale=0; ($cursorposx - $screenx) * $scale / 1")
     cursorposy=$(hyprctl cursorpos -j | jq '.y' 2>/dev/null) || cursorposy=540
     cursorposy=$(bc <<< "scale=0; ($cursorposy - $screeny) * $scale / 1")
-    cursorposy_inverted=$((screensizey - cursorposy))
 
     if [[ "$color_flag" == "1" ]]; then
         matugen_args=(color hex "$color")
@@ -385,7 +378,7 @@ switch() {
     fi
 
     matugen "${matugen_args[@]}" 2>/dev/null || true
-    source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
+    source "${ILLOGICAL_IMPULSE_VIRTUAL_ENV/#\~/$HOME}/bin/activate"
     python3 "$SCRIPT_DIR/generate_colors_material.py" "${generate_colors_material_args[@]}" \
         > "$STATE_DIR"/user/generated/material_colors.scss
     "$SCRIPT_DIR"/applycolor.sh
@@ -426,7 +419,7 @@ main() {
         t3=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t3 // 70' "$SHELL_CONFIG_FILE" 2>/dev/null)
         t4=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.t4 // 100' "$SHELL_CONFIG_FILE" 2>/dev/null)
         brightness_mid=$(jq -r '.appearance.wallpaperTheming.schemeThresholds.brightnessMid // 128' "$SHELL_CONFIG_FILE" 2>/dev/null)
-        source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
+        source "${ILLOGICAL_IMPULSE_VIRTUAL_ENV/#\~/$HOME}/bin/activate"
         "$SCRIPT_DIR"/scheme_for_image.py "$img" \
             --t1 "${t1:-20}" --t2 "${t2:-40}" --t3 "${t3:-70}" --t4 "${t4:-100}" \
             --brightness-mid "${brightness_mid:-128}" \
@@ -452,7 +445,7 @@ main() {
                     set_accent_color ""
                     shift 2
                 else
-                    set_accent_color $(hyprpicker --no-fancy)
+                    set_accent_color "$(hyprpicker --no-fancy)"
                     shift
                 fi
                 ;;
@@ -545,12 +538,6 @@ main() {
     if [[ -z "$imgpath" && -z "$color_flag" && -z "$noswitch_flag" ]]; then
         cd "$(xdg-user-dir PICTURES)/Wallpapers/showcase" 2>/dev/null || cd "$(xdg-user-dir PICTURES)/Wallpapers" 2>/dev/null || cd "$(xdg-user-dir PICTURES)" || return 1
         imgpath="$(kdialog --getopenfilename . --title 'Choose wallpaper')"
-    fi
-
-    if [[ -n "$imgpath" && -z "$noswitch_flag" ]]; then
-        set_accent_color ""
-        color_flag=""
-        color=""
     fi
 
     if [[ -n "$imgpath" && -z "$noswitch_flag" ]]; then

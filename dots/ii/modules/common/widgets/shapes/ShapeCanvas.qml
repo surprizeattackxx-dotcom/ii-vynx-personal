@@ -13,7 +13,7 @@ Canvas {
     property real yOffset: 0
 
     // Internals: size
-    property var bounds: roundedPolygon.calculateBounds()
+    property var bounds: roundedPolygon ? roundedPolygon.calculateBounds() : [0, 0, 0, 0]
     implicitWidth: bounds[2] - bounds[0]
     implicitHeight: bounds[3] - bounds[1]
 

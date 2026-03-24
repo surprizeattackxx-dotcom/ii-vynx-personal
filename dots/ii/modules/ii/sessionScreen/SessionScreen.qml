@@ -297,6 +297,7 @@ Scope {
         target: "session"
 
         function toggle(): void {
+            if (GlobalStates.screenLocked) return;
             GlobalStates.sessionOpen = !GlobalStates.sessionOpen;
         }
 
@@ -305,6 +306,7 @@ Scope {
         }
 
         function open(): void {
+            if (GlobalStates.screenLocked) return;
             GlobalStates.sessionOpen = true;
         }
     }

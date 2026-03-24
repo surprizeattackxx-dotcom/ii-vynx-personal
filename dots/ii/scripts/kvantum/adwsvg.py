@@ -25,8 +25,9 @@ def update_svg_colors(svg_path, old_to_new_colors, output_path):
         svg_content = file.read()
 
     # Replace old colors with new colors
-    for old_color, new_color in old_to_new_colors.items():
-        svg_content = re.sub(old_color, new_color, svg_content, flags=re.IGNORECASE)
+    for old_color, new_color in sorted(old_to_new_colors.items(), key=lambda x: -len(x[0])):
+        pattern = re.escape(old_color) + r'(?![0-9A-Fa-f])'
+        svg_content = re.sub(pattern, new_color, svg_content, flags=re.IGNORECASE)
 
     # Write the updated SVG content to the output file
     with open(output_path, 'w') as file:

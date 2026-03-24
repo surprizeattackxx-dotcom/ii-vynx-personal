@@ -11,19 +11,22 @@ settings_paths=(
     # Add more paths as needed for other forks
 )
 
-new_color=$(cat "$COLOR_FILE_PATH")
+new_color=$(cat "$COLOR_FILE_PATH" 2>/dev/null)
 
-# Loop through each settings file path
+if [[ -z "$new_color" || ! "$new_color" =~ ^#[0-9A-Fa-f]{6}$ ]]; then
+    exit 1
+fi
+
+escaped_color=$(printf '%s\n' "$new_color" | sed 's/[&/\]/\\&/g')
+
 for CODE_SETTINGS_PATH in "${settings_paths[@]}"; do
     if [[ -f "$CODE_SETTINGS_PATH" ]]; then
-        # Try to update the key if it exists
         if grep -q '"material-code.primaryColor"' "$CODE_SETTINGS_PATH"; then
             sed -i -E \
-                "s/(\"material-code.primaryColor\"\s*:\s*\")[^\"]*(\")/\1${new_color}\2/" \
+                "s/(\"material-code.primaryColor\"\s*:\s*\")[^\"]*(\")/\1${escaped_color}\2/" \
                 "$CODE_SETTINGS_PATH"
-        else # If the key is not already there, add it
-            sed -i '$ s/}/,\n  "material-code.primaryColor": "'${new_color}'"\n}/' "$CODE_SETTINGS_PATH"
-            sed -i '$ s/,\n,/,/' "$CODE_SETTINGS_PATH"
+        else
+            sed -i "\$ s/}/,\n  \"material-code.primaryColor\": \"${escaped_color}\"\n}/" "$CODE_SETTINGS_PATH"
         fi
     fi
 done

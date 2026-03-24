@@ -29,17 +29,19 @@ Canvas {
         ctx.fillStyle = ColorUtils.transparentize(root.color, 1 - root.fillOpacity)
         ctx.lineWidth = 2
         ctx.beginPath()
+        var moved = false
         for (var i = 0; i < n; ++i) {
             var valueIndex = (root.alignment === Graph.Alignment.Right) ? root.values.length - n + i : i
             if (valueIndex < 0 || valueIndex >= root.values.length) {
-                continue; // No data for this point
+                continue;
             }
             var x = i * dx
-            var norm = root.values[valueIndex] // already in 0-1 range
+            var norm = root.values[valueIndex]
             var y = height - norm * height
-            if (valueIndex === 0) {
+            if (!moved) {
                 ctx.moveTo(x, height)
                 ctx.lineTo(x, y)
+                moved = true
             } else {
                 ctx.lineTo(x, y)
             }

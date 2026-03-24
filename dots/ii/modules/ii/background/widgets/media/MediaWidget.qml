@@ -292,7 +292,7 @@ AbstractBackgroundWidget {
                 symbolText: root.currentPlayer?.isPlaying ? "pause" : "play_arrow"
                 symbolColor: useAlbumColors ?  blendedColors.colTertiary : Appearance.colors.colTertiary
                 onClicked: {
-                    root.currentPlayer.togglePlaying()
+                    root.currentPlayer?.togglePlaying()
                 }
             }
         }
@@ -329,7 +329,7 @@ AbstractBackgroundWidget {
                         symbolColor: root.dynamicColors.colSecondary
                         symbolText: "skip_previous"
                         onClicked: {
-                            currentPlayer.previous()
+                            currentPlayer?.previous()
                         }
                     }
                 }
@@ -343,7 +343,7 @@ AbstractBackgroundWidget {
                     symbolColor: root.dynamicColors.colSecondary
                     symbolText: "skip_next"
                     onClicked: {
-                        currentPlayer.next()
+                        currentPlayer?.next()
                     }
                 }
 

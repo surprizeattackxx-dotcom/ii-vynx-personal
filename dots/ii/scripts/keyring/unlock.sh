@@ -11,7 +11,7 @@ fi
 # Prompt for password if not provided
 if [[ -z "${UNLOCK_PASSWORD}" ]]; then
     echo -n 'Login password: ' >&2
-    read -s UNLOCK_PASSWORD || return
+    read -s UNLOCK_PASSWORD || exit 1
 fi
 
 # Unlock

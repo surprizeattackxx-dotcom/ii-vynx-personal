@@ -106,7 +106,8 @@ AbstractWidget {
                 const output = leastBusyRegionOutputCollector.text;
                 // console.log("[Background] Least busy region output:", output)
                 if (output.length === 0) return;
-                const parsedContent = JSON.parse(output);
+                let parsedContent;
+                try { parsedContent = JSON.parse(output); } catch (e) { return; }
                 root.dominantColor = parsedContent.dominant_color || Appearance.colors.colPrimary;
                 if (root.placementStrategy === "free") return;
                 // Don't override a per-monitor position that was already set

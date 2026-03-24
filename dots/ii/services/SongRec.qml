@@ -92,10 +92,10 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 if (this.text === "") return
-                if (this.text == 0) {
+                if (this.text === "0") {
                     Qt.openUrlExternally(root.recognizedTrack.url);
                 } else {
-                    Qt.openUrlExternally("https://www.youtube.com/results?search_query=" + root.recognizedTrack.title + " - " + root.recognizedTrack.subtitle);
+                    Qt.openUrlExternally("https://www.youtube.com/results?search_query=" + encodeURIComponent(root.recognizedTrack.title + " - " + root.recognizedTrack.subtitle));
                 }
             }
         }

@@ -34,28 +34,32 @@ Scope {
         GlobalStates.regionSelectorOpen = true;
     }
 
-    function ocr() {
+    function configureAndOpen(mediaType, actionKey, actionValue) {
         GlobalStates.regionSelectorOpen = true;
-        regionSelectorLoader.item.mediaType = WRegionSelectionPanel.MediaType.Image;
-        regionSelectorLoader.item.imageAction = WRegionSelectionPanel.ImageAction.CharRecognition;
+        Qt.callLater(() => {
+            if (!regionSelectorLoader.item) return;
+            regionSelectorLoader.item.mediaType = mediaType;
+            if (actionKey === "imageAction")
+                regionSelectorLoader.item.imageAction = actionValue;
+            else if (actionKey === "videoAction")
+                regionSelectorLoader.item.videoAction = actionValue;
+        });
+    }
+
+    function ocr() {
+        configureAndOpen(WRegionSelectionPanel.MediaType.Image, "imageAction", WRegionSelectionPanel.ImageAction.CharRecognition);
     }
 
     function record() {
-        GlobalStates.regionSelectorOpen = true;
-        regionSelectorLoader.item.mediaType = WRegionSelectionPanel.MediaType.Video;
-        regionSelectorLoader.item.videoAction = WRegionSelectionPanel.VideoAction.Record;
+        configureAndOpen(WRegionSelectionPanel.MediaType.Video, "videoAction", WRegionSelectionPanel.VideoAction.Record);
     }
 
     function recordWithSound() {
-        GlobalStates.regionSelectorOpen = true;
-        regionSelectorLoader.item.mediaType = WRegionSelectionPanel.MediaType.Video;
-        regionSelectorLoader.item.videoAction = WRegionSelectionPanel.VideoAction.RecordWithSound;
+        configureAndOpen(WRegionSelectionPanel.MediaType.Video, "videoAction", WRegionSelectionPanel.VideoAction.RecordWithSound);
     }
 
     function search() {
-        GlobalStates.regionSelectorOpen = true;
-        regionSelectorLoader.item.mediaType = WRegionSelectionPanel.MediaType.Image;
-        regionSelectorLoader.item.imageAction = WRegionSelectionPanel.ImageAction.Search;
+        configureAndOpen(WRegionSelectionPanel.MediaType.Image, "imageAction", WRegionSelectionPanel.ImageAction.Search);
     }
 
     IpcHandler {

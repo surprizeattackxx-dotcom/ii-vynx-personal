@@ -59,7 +59,13 @@ response=$(curl "https://generativelanguage.googleapis.com/v1beta/models/${MODEL
 -d "$payload" 2> /dev/null)
 # echo "$response" | jq
 
-# Write the result
-echo "$response" | jq -r '.candidates[0].content.parts[0].text' > "${TRANSLATIONS_TARGET_DIR}/${TARGET_LOCALE}.json"
+# Validate and write the result
+translated=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // empty')
+if [[ -z "$translated" ]] || ! echo "$translated" | jq empty 2>/dev/null; then
+    error_msg=$(echo "$response" | jq -r '.error.message // "Unknown API error"')
+    notify-send "Translation failed" "$error_msg" -a "$NOTIFICATION_APP_NAME"
+    exit 1
+fi
+echo "$translated" > "${TRANSLATIONS_TARGET_DIR}/${TARGET_LOCALE}.json"
 jq --arg locale "$TARGET_LOCALE" '.language.ui = $locale' "$SHELL_CONFIG_FILE" > "${SHELL_CONFIG_FILE}.tmp" && mv "${SHELL_CONFIG_FILE}.tmp" "$SHELL_CONFIG_FILE"
 notify-send "Translation complete" "Enjoy! In case you wanna refine it, the file is in ${TRANSLATIONS_TARGET_DIR}/${TARGET_LOCALE}.json" -a "$NOTIFICATION_APP_NAME"

@@ -176,9 +176,9 @@ GroupButton {
             const toggleList = Config.options.sidebar.quickToggles.android.toggles;
             const buttonType = root.buttonData.type;
             if (!toggleList.find(t => t.type === buttonType))
-                toggleList.push({ type: buttonType, size: 1 });
+                Config.options.sidebar.quickToggles.android.toggles = [...toggleList, { type: buttonType, size: 1 }];
             else
-                toggleList.splice(root.buttonIndex, 1);
+                Config.options.sidebar.quickToggles.android.toggles = toggleList.filter((_, i) => i !== root.buttonIndex);
         }
         function toggleSize() {
             const toggleList = Config.options.sidebar.quickToggles.android.toggles;

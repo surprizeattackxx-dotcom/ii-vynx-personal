@@ -125,20 +125,23 @@ Item {
                                         var result = [];
                                         for (var i = 0; i < keybindSection.modelData.keybinds.length; i++) {
                                             const keybind = keybindSection.modelData.keybinds[i];
+                                            let mods = keybind.mods.slice();
+                                            let key = keybind.key;
 
                                             if (!Config.options.cheatsheet.splitButtons) {
-                                                for (var j = 0; j < keybind.mods.length; j++) {
-                                                    keybind.mods[j] = keySubstitutions[keybind.mods[j]] || keybind.mods[j];
+                                                for (var j = 0; j < mods.length; j++) {
+                                                    mods[j] = keySubstitutions[mods[j]] || mods[j];
                                                 }
-                                                keybind.mods = [keybind.mods.join(' ') ]
-                                                keybind.mods[0] += !keyBlacklist.includes(keybind.key) && keybind.mods[0].length ? ' ' : ''
-                                                keybind.mods[0] += !keyBlacklist.includes(keybind.key) ? (keySubstitutions[keybind.key] || keybind.key) : ''
+                                                let combined = mods.join(' ');
+                                                if (!keyBlacklist.includes(key) && combined.length) combined += ' ';
+                                                if (!keyBlacklist.includes(key)) combined += (keySubstitutions[key] || key);
+                                                mods = [combined];
                                             } 
 
                                             result.push({
                                                 "type": "keys",
-                                                "mods": keybind.mods,
-                                                "key": keybind.key,
+                                                "mods": mods,
+                                                "key": key,
                                             });
                                             result.push({
                                                 "type": "comment",

@@ -137,6 +137,6 @@ Singleton {
     }
 
     function stopwatchRecordLap() {
-        Persistent.states.timer.stopwatch.laps.push(stopwatchTime);
+        Persistent.states.timer.stopwatch.laps = [...Persistent.states.timer.stopwatch.laps, stopwatchTime];
     }
 }

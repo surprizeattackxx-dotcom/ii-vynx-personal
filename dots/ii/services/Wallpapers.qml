@@ -131,7 +131,8 @@ Singleton {
             if (/^\/*$/.test(validateDirProc.nicePath)) validateDirProc.nicePath = "/";
             validateDirProc.exec([
                 "bash", "-c",
-                `if [ -d "${validateDirProc.nicePath}" ]; then echo dir; elif [ -f "${validateDirProc.nicePath}" ]; then echo file; else echo invalid; fi`
+                `if [ -d "$1" ]; then echo dir; elif [ -f "$1" ]; then echo file; else echo invalid; fi`,
+                "_", validateDirProc.nicePath
             ])
         }
         stdout: StdioCollector {
@@ -178,11 +179,12 @@ Singleton {
             sortField: FolderListModel.Time
             sortReversed: false
             onCountChanged: {
-                root.wallpapers = []
+                const paths = []
                 for (let i = 0; i < folderModel.count; i++) {
                     const path = folderModel.get(i, "filePath") || FileUtils.trimFileProtocol(folderModel.get(i, "fileURL"))
-                    if (path && path.length) root.wallpapers.push(path)
+                    if (path && path.length) paths.push(path)
                 }
+                root.wallpapers = paths
             }
     }
 

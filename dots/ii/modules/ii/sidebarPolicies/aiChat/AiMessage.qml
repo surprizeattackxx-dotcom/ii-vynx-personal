@@ -116,10 +116,10 @@ Rectangle {
                             CustomIcon {
                                 id: modelIcon
                                 anchors.centerIn: parent
-                                visible: messageData?.role == 'assistant' && Ai.models[messageData?.model].icon
+                                visible: messageData?.role == 'assistant' && Ai.models[messageData?.model]?.icon
                                 width: Appearance.font.pixelSize.large
                                 height: Appearance.font.pixelSize.large
-                                source: messageData?.role == 'assistant' ? Ai.models[messageData?.model].icon :
+                                source: messageData?.role == 'assistant' ? (Ai.models[messageData?.model]?.icon ?? '') :
                                     messageData?.role == 'user' ? 'linux-symbolic' : 'desktop-symbolic'
 
                                 colorize: true
@@ -146,7 +146,7 @@ Rectangle {
                             elide: Text.ElideRight
                             font.pixelSize: Appearance.font.pixelSize.normal
                             color: Appearance.m3colors.m3onSecondaryContainer
-                            text: messageData?.role == 'assistant' ? Ai.models[messageData?.model].name :
+                            text: messageData?.role == 'assistant' ? (Ai.models[messageData?.model]?.name ?? messageData?.model ?? '') :
                                 (messageData?.role == 'user' && SystemInfo.username) ? SystemInfo.username :
                                 Translation.tr("Interface")
                         }

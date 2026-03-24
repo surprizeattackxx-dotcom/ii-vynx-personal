@@ -454,8 +454,8 @@ Item {
 
     property var allCommands: [  
         { name: "api", description: Translation.tr("Set API key for current service. Usage: %1api YOUR_API_KEY").arg(root.commandPrefix), execute: args => {  
+            const currentService = root.currentService;
             if (args.length === 0) {  
-                const currentService = root.currentService;  
                 const unsplashApiKey = WallpaperBrowser.unsplashApiToken
                 
                 if (currentService === "unsplash") {

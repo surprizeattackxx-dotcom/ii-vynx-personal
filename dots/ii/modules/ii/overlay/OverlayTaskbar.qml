@@ -123,7 +123,7 @@ Rectangle {
             if (widgetButton.toggled) {
                 Persistent.states.overlay.open = Persistent.states.overlay.open.filter(type => type !== identifier);
             } else {
-                Persistent.states.overlay.open.push(identifier);
+                Persistent.states.overlay.open = [...Persistent.states.overlay.open, identifier];
             }
         }
         implicitWidth: implicitHeight

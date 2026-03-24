@@ -51,7 +51,7 @@ Item {
             var lines = root.geniusLyricsString.split('\n')
             var totalLines = lines.length
             
-            var currentLineIndex = (root.player.position / root.player.length) * totalLines
+            var currentLineIndex = (root.player && root.player.length > 0) ? (root.player.position / root.player.length) * totalLines : 0
             
             var averageLineHeight = contentHeight / totalLines
             var targetY = (currentLineIndex * averageLineHeight)

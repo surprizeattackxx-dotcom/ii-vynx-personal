@@ -103,8 +103,7 @@ Singleton {
 		}
 
 		function onTrackArtUrlChanged() {
-			// console.log("arturl:", activePlayer.trackArtUrl)
-			// root.updateTrack();
+			if (!root.activeTrack) { root.updateTrack(); return; }
 			if (root.activePlayer.uniqueId == root.activeTrack.uniqueId && root.activePlayer.trackArtUrl != root.activeTrack.artUrl) {
 				// cantata likes to send cover updates *BEFORE* updating the track info.
 				// as such, art url changes shouldn't be able to break the reverse animation
@@ -175,11 +174,11 @@ Singleton {
 	}
 
 	function setActivePlayer(player: MprisPlayer) {
-		const targetPlayer = player ?? Mpris.players[0];
+		const targetPlayer = player ?? Mpris.players.values[0];
 		console.log(`[Mpris] Active player ${targetPlayer} << ${activePlayer}`)
 
 		if (targetPlayer && this.activePlayer) {
-			this.__reverse = Mpris.players.indexOf(targetPlayer) < Mpris.players.indexOf(this.activePlayer);
+			this.__reverse = Mpris.players.values.indexOf(targetPlayer) < Mpris.players.values.indexOf(this.activePlayer);
 		} else {
 			// always animate forward if going to null
 			this.__reverse = false;

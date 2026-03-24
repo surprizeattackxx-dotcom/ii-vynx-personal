@@ -46,7 +46,11 @@ generate_thumbnail() {
     echo "FILE $abs_path"
 }
 
-# ... [Rest of your argument parsing logic remains the same] ...
+usage() {
+    echo "Usage: $0 [--size normal|large] --file <path> | --directory <path>" >&2
+    exit 1
+}
+
 SIZE_NAME="normal"
 MODE=""
 TARGET=""

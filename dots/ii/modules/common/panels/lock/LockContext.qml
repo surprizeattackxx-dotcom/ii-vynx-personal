@@ -119,6 +119,9 @@ Scope {
         }
     }
 
+    property int fingerRetryCount: 0
+    readonly property int maxFingerRetries: 5
+
     PamContext {
         id: fingerPam
 
@@ -127,10 +130,15 @@ Scope {
 
         onCompleted: result => {
             if (result == PamResult.Success) {
+                root.fingerRetryCount = 0;
                 root.unlocked(root.targetAction);
                 stopFingerPam();
-            } else if (result == PamResult.Error) { // if timeout or etc..
-                tryFingerUnlock()
+            } else if (result == PamResult.Error) {
+                root.fingerRetryCount++;
+                if (root.fingerRetryCount < root.maxFingerRetries)
+                    tryFingerUnlock()
+                else
+                    console.warn("[LockContext] Fingerprint PAM failed after", root.maxFingerRetries, "retries");
             }
         }
     }

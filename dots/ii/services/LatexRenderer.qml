@@ -42,7 +42,7 @@ Singleton {
             renderFinished(hash, imagePath)
             return [hash, false]
         } else {
-            root.processedHashes.push(hash)
+            root.processedHashes = [...root.processedHashes, hash]
             root.processedExpressions[hash] = expression
             // console.log("Rendering expression: " + expression)
         }

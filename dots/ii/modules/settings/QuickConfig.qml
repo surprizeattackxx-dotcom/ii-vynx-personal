@@ -216,12 +216,13 @@ ContentPage {
 
                                 height: monitorPreviewsContainer.implicitHeight
 
-                                StyledImage {
+                                ThumbnailImage {
                                     anchors.fill: parent
                                     sourceSize.width: parent.width
                                     sourceSize.height: parent.height
                                     fillMode: Image.PreserveAspectCrop
-                                    source: monitorTile.wallpaperPath
+                                    sourcePath: FileUtils.trimFileProtocol(monitorTile.wallpaperPath)
+                                    generateThumbnail: false
                                     cache: false
 
                                     layer.enabled: true

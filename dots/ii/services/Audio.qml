@@ -59,14 +59,14 @@ Singleton {
 
     function incrementVolume() {
         const currentVolume = Audio.value;
-        const step = currentVolume < 0.1 ? 0.01 : 0.02 || 0.2;
+        const step = currentVolume < 0.1 ? 0.01 : 0.02;
         Audio.sink.audio.volume = Math.min(1, Audio.sink.audio.volume + step);
     }
-    
+
     function decrementVolume() {
         const currentVolume = Audio.value;
-        const step = currentVolume < 0.1 ? 0.01 : 0.02 || 0.2;
-        Audio.sink.audio.volume -= step;
+        const step = currentVolume < 0.1 ? 0.01 : 0.02;
+        Audio.sink.audio.volume = Math.max(0, Audio.sink.audio.volume - step);
     }
 
     function setDefaultSink(node) {
@@ -115,25 +115,9 @@ Singleton {
     }
 
     function playSystemSound(soundName) {
-        const ogaPath = `/usr/share/sounds/${root.audioTheme}/stereo/${soundName}.oga`;
-        const oggPath = `/usr/share/sounds/${root.audioTheme}/stereo/${soundName}.ogg`;
-
-        // Try playing .oga first
-        let command = [
-            "ffplay",
-            "-nodisp",
-            "-autoexit",
-            ogaPath
-        ];
-        Quickshell.execDetached(command);
-
-        // Also try playing .ogg (ffplay will just fail silently if file doesn't exist)
-        command = [
-            "ffplay",
-            "-nodisp",
-            "-autoexit",
-            oggPath
-        ];
-        Quickshell.execDetached(command);
+        const base = `/usr/share/sounds/${root.audioTheme}/stereo/${soundName}`;
+        Quickshell.execDetached(["bash", "-c",
+            `f="${base}.oga"; [ -f "$f" ] || f="${base}.ogg"; [ -f "$f" ] && exec ffplay -nodisp -autoexit "$f"`
+        ]);
     }
 }

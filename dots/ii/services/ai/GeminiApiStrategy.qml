@@ -20,20 +20,23 @@ ApiStrategy {
             // console.log("[AI] Building request data for message:", JSON.stringify(message, null, 2));
             const geminiApiRoleName = (message.role === "assistant") ? "model" : message.role;
             const usingSearch = tools[0]?.google_search !== undefined
-            if (!usingSearch && message.functionCall != undefined && message.functionName.length > 0) {
+            if (!usingSearch && message.functionCall != null && message.functionName && message.functionName.length > 0) {
+                // Replay geminiParts verbatim — preserves thought signatures required by Gemini API
+                const geminiParts = message.functionCall?.geminiParts;
                 return {
                     "role": geminiApiRoleName,
-                    "parts": [{
+                    "parts": geminiParts || [{
                         functionCall: {
                             "name": message.functionName,
+                            "args": message.functionCall?.args || {}
                         }
                     }]
                 }
             }
-            if (!usingSearch && message.functionResponse != undefined && message.functionName.length > 0) {
+            if (!usingSearch && message.functionResponse != null && message.functionName && message.functionName.length > 0) {
                 return {
                     "role": geminiApiRoleName,
-                    "parts": [{ 
+                    "parts": [{
                         functionResponse: {
                             "name": message.functionName,
                             "response": { "content": message.functionResponse }
@@ -91,7 +94,9 @@ ApiStrategy {
             buffer += line.slice(0, -1).trim();
             return parseBuffer(message);
         } else if (line.startsWith(",")) {
-            return parseBuffer(message);
+            const result = parseBuffer(message);
+            buffer = line.slice(1).trim();
+            return result;
         } else {
             buffer += line.trim();
         }
@@ -128,19 +133,24 @@ ApiStrategy {
                 finished = true;
             }
             
-            // Function call handling
-            if (dataJson.candidates[0]?.content?.parts[0]?.functionCall) {
-                const functionCall = dataJson.candidates[0]?.content?.parts[0]?.functionCall;
+            // Function call handling — use .find() since thinking part may be parts[0]
+            const parts = dataJson.candidates[0]?.content?.parts || [];
+            const fcPart = parts.find(p => p.functionCall);
+            if (fcPart) {
+                const functionCall = fcPart.functionCall;
                 message.functionName = functionCall.name;
-                message.functionCall = functionCall.name;
+                // Store full parts array so buildRequestData can replay thought signatures verbatim
+                message.functionCall = { name: functionCall.name, args: functionCall.args, geminiParts: parts };
                 const newContent = `\n\n[[ Function: ${functionCall.name}(${JSON.stringify(functionCall.args, null, 2)}) ]]\n`
                 message.rawContent += newContent;
                 message.content += newContent;
-                return { functionCall: { name: functionCall.name, args: functionCall.args }, finished: finished };
+                return { functionCall: { name: functionCall.name, args: functionCall.args, geminiParts: parts }, finished: finished };
             }
 
-            // Normal text response
-            const responseContent = dataJson.candidates[0]?.content?.parts[0]?.text
+            // Normal text response — skip thought parts (thought: true)
+            const textPart = parts.find(p => p.text && !p.thought);
+            const responseContent = textPart?.text ?? ""
+            if (!responseContent) return { finished: finished };
             message.rawContent += responseContent;
             message.content += responseContent;
             
@@ -158,11 +168,11 @@ ApiStrategy {
                     "type": "url_citation",
                     "start_index": citation.segment?.startIndex,
                     "end_index": citation.segment?.endIndex,
-                    "text": citation?.segment.text,
-                    "url": annotationSources[citation.groundingChunkIndices[0]]?.url,
-                    "sources": citation.groundingChunkIndices
+                    "text": citation?.segment?.text,
+                    "url": annotationSources[citation.groundingChunkIndices?.[0]]?.url,
+                    "sources": citation.groundingChunkIndices ?? []
                 }
-            });
+            }) ?? [];
             message.annotationSources = annotationSources;
             message.annotations = annotations;
             message.searchQueries = dataJson.candidates[0]?.groundingMetadata?.webSearchQueries ?? [];

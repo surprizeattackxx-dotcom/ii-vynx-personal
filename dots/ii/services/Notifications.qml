@@ -116,7 +116,8 @@ Singleton {
         onTriggered: () => {
             const index = root.list.findIndex((notif) => notif.notificationId === notificationId);
             const notifObject = root.list[index];
-            print("[Notifications] Notification timer triggered for ID: " + notificationId + ", transient: " + notifObject?.isTransient);
+            if (notifObject == null) { destroy(); return; }
+            print("[Notifications] Notification timer triggered for ID: " + notificationId + ", transient: " + notifObject.isTransient);
             if (notifObject.isTransient) root.discardNotification(notificationId);
             else root.timeoutNotification(notificationId);
             destroy()
@@ -289,7 +290,7 @@ Singleton {
 
     function cancelTimeout(id) {
         const index = root.list.findIndex((notif) => notif.notificationId === id);
-        if (root.list[index] != null)
+        if (root.list[index] != null && root.list[index].timer != null)
             root.list[index].timer.stop();
     }
 
@@ -414,7 +415,15 @@ Singleton {
         path: Qt.resolvedUrl(filePath)
         onLoaded: {
             const fileContents = notifFileView.text()
-            root.list = JSON.parse(fileContents).map((notif) => {
+            let parsed;
+            try { parsed = JSON.parse(fileContents); } catch (e) {
+                console.log("[Notifications] Corrupted file, resetting:", e);
+                root.list = [];
+                root.initDone();
+                return;
+            }
+            if (!Array.isArray(parsed)) { root.list = []; root.initDone(); return; }
+            root.list = parsed.map((notif) => {
                 return notifComponent.createObject(root, {
                     "notificationId": notif.notificationId,
                     "actions":        [],
@@ -442,6 +451,7 @@ Singleton {
                 notifFileView.setText(stringifyList(root.list));
             } else {
                 console.log("[Notifications] Error loading file: " + error)
+                root.list = []
             }
         }
     }

@@ -14,8 +14,7 @@ FolderListModel {
     function pushToHistory(path) {
         if (folderHistory[currentFolderHistoryIndex] === path)
             return;
-        folderHistory = folderHistory.slice(0, currentFolderHistoryIndex + 1);
-        folderHistory.push(path);
+        folderHistory = [...folderHistory.slice(0, currentFolderHistoryIndex + 1), path];
         currentFolderHistoryIndex = folderHistory.length - 1;
     }
 

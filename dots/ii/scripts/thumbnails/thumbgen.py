@@ -55,14 +55,6 @@ def make_thumbnail(fpath: str) -> bool:
     factory.save_thumbnail(thumbnail, uri, mtime)
     return True
 
-    if factory.can_thumbnail(uri, mime_type, mtime):
-        thumb = factory.generate_thumbnail(uri, mime_type)
-        if thumb:
-            factory.save_thumbnail(thumb, uri, mtime)
-            print(f"FILE {fpath}") # ADD THIS LINE
-            return True
-    return False
-
 
 @logger.catch()
 def thumbnail_folder(*, dir_path: Path, workers: int, only_images: bool, recursive: bool, machine_progress: bool = False) -> None:

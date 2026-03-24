@@ -78,5 +78,6 @@ Singleton {
         if (weatherIconMap.hasOwnProperty(key)) {
             return weatherIconMap[key]
         }
+        return "weather_mix"
     }
 }

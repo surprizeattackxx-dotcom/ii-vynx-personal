@@ -45,7 +45,7 @@ StyledImage {
             const thumbPath = FileUtils.trimFileProtocol(root.thumbnailPath);
             const thumbDir = thumbPath.substring(0, thumbPath.lastIndexOf("/"));
             return ["bash", "-c",
-            `mkdir -p '${thumbDir}' && ([ -f '${thumbPath}' ] && exit 0 || { magick '${root.sourcePath}' -resize ${maxSize}x${maxSize} '${thumbPath}' && exit 1; })`
+            `mkdir -p '${thumbDir}' && ([ -f '${thumbPath}' ] && exit 0 || { magick '${StringUtils.shellSingleQuoteEscape(root.sourcePath)}' -resize ${maxSize}x${maxSize} '${thumbPath}' && exit 1; })`
             ]
         }
         onExited: (exitCode, exitStatus) => {

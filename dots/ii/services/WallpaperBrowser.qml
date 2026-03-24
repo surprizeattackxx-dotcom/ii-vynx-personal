@@ -145,7 +145,9 @@ Singleton {
         }  
     }  
   
-    function clearResponses() {  
+    function clearResponses() {
+        for (const r of responses)
+            if (r) r.destroy();
         responses = []  
     }  
   
@@ -333,7 +335,6 @@ Singleton {
                 root.runningRequests--;  
                 root.responses = [...root.responses, newResponse]  
             }  
-            root.responseFinished()  
         }  
   
         try {  
@@ -346,6 +347,7 @@ Singleton {
             xhr.send()  
         } catch (error) {  
             console.log("Could not set headers:", error)  
+            root.runningRequests = Math.max(0, root.runningRequests - 1);
         }     
     }  
   

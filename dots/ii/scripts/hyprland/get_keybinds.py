@@ -124,7 +124,7 @@ def autogenerate_comment(dispatcher: str, params: str = "") -> str:
             if params == "+1":
                 return "Window: move to right workspace"
             elif params == "-1":
-                return "Window: move to right workspace"
+                return "Window: move to left workspace"
             return "Window: move to workspace {}".format(params)
 
         case "togglespecialworkspace":

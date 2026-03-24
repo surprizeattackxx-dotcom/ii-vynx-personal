@@ -71,8 +71,8 @@ Singleton {
         return lrclib.lines[index + 1].time - lrclib.lines[index].time;
     }
 
-    function changeDurationToIndex(index) { // for lrclib, called by LyricsSyllable
-        if (!hasSyncedLines) return;
+    function changeDurationToIndex(index) {
+        if (!hasSyncedLines || index < 0 || index >= root.syncedLines.length) return;
         root.activePlayer.position = root.syncedLines[index].time
     }
     

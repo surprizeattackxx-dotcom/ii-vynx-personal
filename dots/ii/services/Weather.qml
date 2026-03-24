@@ -256,7 +256,7 @@ Singleton {
             const lon = root.location.lon;
             command = `curl -sf "https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&${root._weatherParams}" | jq --arg c "" '. + {city_name: $c}'`;
         } else {
-            const cityOnly = root.city.trim().split(",")[0].trim().split(/\s+/).join("+");
+            const cityOnly = root.city.trim().split(",")[0].trim().replace(/'/g, "").split(/\s+/).join("+");
             command = `
 GEO=$(curl -sf 'https://geocoding-api.open-meteo.com/v1/search?name=${cityOnly}&count=1&language=en&format=json')
 LAT=$(echo "$GEO" | jq -r '.results[0].latitude // empty')

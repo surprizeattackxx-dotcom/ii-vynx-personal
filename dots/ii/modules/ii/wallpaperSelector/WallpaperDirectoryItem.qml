@@ -183,15 +183,13 @@ MouseArea {
                         tooltipText: Translation.tr("Toggle favourite")
 
                         onClicked: {
-                            const favs = Array.from(Persistent.states.wallpaper.favourites);
                             const path = fileModelData.filePath;
-                            const index = favs.indexOf(path);
-                            if (index === -1) {
-                                favs.push(path);
+                            const favs = Persistent.states.wallpaper.favourites;
+                            if (favs.indexOf(path) === -1) {
+                                Persistent.states.wallpaper.favourites = [...favs, path];
                             } else {
-                                favs.splice(index, 1);
+                                Persistent.states.wallpaper.favourites = favs.filter(f => f !== path);
                             }
-                            Persistent.states.wallpaper.favourites = favs;
                         }
                     }
                 }

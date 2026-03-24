@@ -33,7 +33,7 @@ MouseArea { // Notification group area
     dragIndexDiff == 2 ? (parentDragDistance * 0.1) : 0
 
     function destroyWithAnimation(left = false) {
-        root.qmlParent.resetDrag()
+        root.qmlParent?.resetDrag()
         background.anchors.leftMargin = background.anchors.leftMargin; // Break binding
         destroyAnimation.left = left;
         destroyAnimation.running = true;

@@ -297,9 +297,9 @@ Item {
                         return sum * root.scale
                     }
 
-                    onWorkspaceTotalWindowWidthChanged: { // we have to update widthMap here to prevent 'Binding Loop' error
+                    onWorkspaceTotalWindowWidthChanged: {
                         if (workspaceTotalWindowWidth > 0 && root.hyprscrollingEnabled) {
-                            root.widthMap.push(workspaceTotalWindowWidth)
+                            root.widthMap = [...root.widthMap, workspaceTotalWindowWidth]
                         }
                     }
 

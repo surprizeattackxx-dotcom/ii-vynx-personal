@@ -32,12 +32,12 @@ apply_qt() {
 	if [ "$lightdark" = "light" ]; then
 		# apply ligght colors
 		cp "$XDG_CONFIG_HOME/Kvantum/Colloid/Colloid.kvconfig" "$XDG_CONFIG_HOME/Kvantum/MaterialAdw/MaterialAdw.kvconfig"
-		python "$CONFIG_DIR/scripts/kvantum/adwsvg.py"
+		python3 "$CONFIG_DIR/scripts/kvantum/adwsvg.py"
 
 	else
 		#apply dark colors
 		cp "$XDG_CONFIG_HOME/Kvantum/Colloid/ColloidDark.kvconfig" "$XDG_CONFIG_HOME/Kvantum/MaterialAdw/MaterialAdw.kvconfig"
-		python "$CONFIG_DIR/scripts/kvantum/adwsvgDark.py"
+		python3 "$CONFIG_DIR/scripts/kvantum/adwsvgDark.py"
 	fi
 }
 

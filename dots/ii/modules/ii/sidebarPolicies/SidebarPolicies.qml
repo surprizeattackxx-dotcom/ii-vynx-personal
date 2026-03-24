@@ -129,9 +129,17 @@ Scope { // Scope
             onVisibleChanged: {
                 if (visible) {
                     GlobalFocusGrab.addDismissable(panelWindow);
+                    focusInputTimer.restart();
                 } else {
                     GlobalFocusGrab.removeDismissable(panelWindow);
                 }
+            }
+
+            Timer {
+                id: focusInputTimer
+                interval: 80
+                repeat: false
+                onTriggered: root.sidebarContent.focusActiveItem()
             }
 
             Connections {

@@ -19,7 +19,9 @@ Singleton {
     }
 
     function applyColors(fileContent) {
-        const json = JSON.parse(fileContent)
+        let json
+        try { json = JSON.parse(fileContent) }
+        catch (e) { console.warn("[MaterialThemeLoader] Failed to parse theme:", e); return }
         for (const key in json) {
             if (json.hasOwnProperty(key)) {
                 // Convert snake_case to CamelCase

@@ -14,6 +14,6 @@ Loader {
 
     Behavior on opacity {
         id: opacityBehavior
-        animation: Looks.transition.opacity.createObject(null)
+        animation: Looks.transition.opacity.createObject(opacityBehavior)
     }
 }

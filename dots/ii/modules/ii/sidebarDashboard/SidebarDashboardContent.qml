@@ -184,6 +184,7 @@ Item {
         shownPropertyString: "showBluetoothDialog"
         dialog: BluetoothDialog {}
         onShownChanged: {
+            if (!Bluetooth.defaultAdapter) return;
             if (!shown) {
                 Bluetooth.defaultAdapter.discovering = false;
             } else {

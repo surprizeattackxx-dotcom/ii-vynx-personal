@@ -104,7 +104,7 @@ Singleton {
                         "width": item.width,
                         "height": item.height,
                         "aspect_ratio": item.width / item.height,
-                        "tags": item.tags.join(" "),
+                        "tags": Array.isArray(item.tags) ? item.tags.join(" ") : (item.tags ?? ""),
                         "rating": "safe", // Zerochan doesn't have nsfw
                         "is_nsfw": false,
                         "md5": item.md5,
@@ -159,6 +159,7 @@ Singleton {
             "description": Translation.tr("The hentai one | Great quantity, a lot of NSFW, quality varies wildly"),
             "mapFunc": (response) => {
                 response = response.post
+                if (!response) return []
                 return response.map(item => {
                     return {
                         "id": item.id,
@@ -179,6 +180,7 @@ Singleton {
             },
             "tagSearchTemplate": "https://gelbooru.com/index.php?page=dapi&s=tag&q=index&json=1&orderby=count&limit=10&name_pattern={{query}}%",
             "tagMapFunc": (response) => {
+                if (!response.tag) return []
                 return response.tag.map(item => {
                     return {
                         "name": item.name,

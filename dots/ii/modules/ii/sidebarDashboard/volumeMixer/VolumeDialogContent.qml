@@ -78,8 +78,4 @@ ColumnLayout {
         animateAppearance: false
     }
 
-    Component {
-        id: listElementComp
-        ListElement {}
-    }
 }

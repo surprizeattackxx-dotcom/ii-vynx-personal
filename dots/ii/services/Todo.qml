@@ -111,9 +111,15 @@ Singleton {
         path: Qt.resolvedUrl(root.filePath)
         onLoaded: {
             const fileContents = todoFileView.text()
-            root.list = JSON.parse(fileContents)
+            try {
+                root.list = JSON.parse(fileContents)
+            } catch (e) {
+                console.warn("[To Do] Failed to parse file, resetting:", e)
+                root.list = []
+                return
+            }
 
-            for (let i=0; i< root.list.length; i++){ //parse date as date object
+            for (let i=0; i< root.list.length; i++){
               root.list[i]['date'] = new Date(root.list[i]['date'])
             }
 

@@ -19,6 +19,7 @@ QtObject {
     property string functionName
     property var functionCall
     property string functionResponse
+    property string toolCallId: ""   // links tool result back to the assistant's tool_calls[].id
     property bool functionPending: false
     property bool visibleToUser: true
 }

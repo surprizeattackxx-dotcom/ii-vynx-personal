@@ -217,7 +217,9 @@ if args.json_out is not None:
         if "palette" not in k.lower() and not k.startswith("term")
     }
     import os
-    os.makedirs(os.path.dirname(args.json_out), exist_ok=True)
+    dirname = os.path.dirname(args.json_out)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     with open(args.json_out, "w") as f:
         json.dump(json_colors, f, indent=2)
 

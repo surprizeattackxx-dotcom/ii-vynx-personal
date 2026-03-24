@@ -31,7 +31,7 @@ Canvas { // Visualizer
 
         // Smoothing: simple moving average (optional)
         var smoothWindow = root.smoothing; // adjust for more/less smoothing
-        root.smoothPoints = [];
+        var sp = [];
         for (var i = 0; i < n; ++i) {
             var sum = 0, count = 0;
             for (var j = -smoothWindow; j <= smoothWindow; ++j) {
@@ -39,9 +39,10 @@ Canvas { // Visualizer
                 sum += points[idx];
                 count++;
             }
-            root.smoothPoints.push(sum / count);
+            sp.push(sum / count);
         }
-        if (!root.live) root.smoothPoints.fill(0); // If not playing, show no points
+        if (!root.live) sp.fill(0);
+        root.smoothPoints = sp;
 
         ctx.beginPath();
         ctx.moveTo(0, h);

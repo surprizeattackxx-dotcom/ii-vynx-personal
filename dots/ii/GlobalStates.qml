@@ -24,7 +24,7 @@ Singleton {
     property bool regionSelectorOpen: false
     property bool searchOpen: false
     property bool screenLocked: false
-    property bool screenLockContainsCharacters: true
+    property bool screenLockContainsCharacters: false
     property bool screenUnlockFailed: false
     property bool sessionOpen: false
     property bool superDown: false
@@ -33,6 +33,7 @@ Singleton {
     property bool workspaceShowNumbers: true
     property bool isScrollingLayout: false
 
+    property bool calendarAppOpen: false
     property bool dashboardPanelOpen: false // formerly sidebarRightOpen
     property bool policiesPanelOpen: false  // formerly sidebarLeftOpen
 
@@ -97,7 +98,7 @@ Singleton {
         onPressed: {
             root.policiesPanelOpen = true;
             Persistent.states.sidebar.policies.tab = 0;
-            root.sttToggleRequested = !root.sttRecording;
+            root.sttToggleRequested = true;
         }
     }
 

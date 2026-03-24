@@ -26,31 +26,28 @@ if [[ "$(base64 --version 2>&1)" = *"FreeBSD"* ]]; then
 else
     B64FLAGS="-w0"
 fi
-B64DATA="$(base64 $B64FLAGS $RESIZED_IMG_PATH)"
-# echo $B64DATA
+B64DATA="$(base64 $B64FLAGS "$RESIZED_IMG_PATH")"
 
-# Prepare request data
-payload='{
-    "contents": [{
-        "parts":[
-            {
-                "inline_data": {
-                "mime_type":"image/jpeg",
-                "data": "'"$B64DATA"'"
-                }
+# Prepare request data using jq for safe JSON construction
+payload=$(jq -n \
+    --arg b64 "$B64DATA" \
+    --arg prompt "$PROMPT" \
+    '{
+        contents: [{
+            parts: [
+                { inline_data: { mime_type: "image/jpeg", data: $b64 } },
+                { text: $prompt }
+            ]
+        }],
+        generationConfig: {
+            responseMimeType: "text/x.enum",
+            responseSchema: {
+                type: "string",
+                enum: [ "abstract", "anime", "city", "minimalist", "landscape", "plants", "person", "space" ]
             },
-            {"text": "'"$PROMPT"'"}
-        ]
-    }],
-    "generationConfig": {
-        "responseMimeType": "text/x.enum",
-        "responseSchema": {
-            "type": "string",
-            "enum": [ "abstract", "anime", "city", "minimalist", "landscape", "plants", "person", "space" ]
-        },
-        "temperature": 0
-    }
-}'
+            temperature: 0
+        }
+    }')
 # echo "$payload" | jq
 
 # Make the request

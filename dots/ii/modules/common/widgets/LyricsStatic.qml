@@ -10,7 +10,7 @@ StyledText {
     }
 
     font.pixelSize: Appearance.font.pixelSize.smallie
-    text: LyricsService.syncedLines[LyricsService.currentIndex].text
+    text: (LyricsService.currentIndex >= 0 && LyricsService.currentIndex < LyricsService.syncedLines.length) ? LyricsService.syncedLines[LyricsService.currentIndex].text : ""
     animateChange: true
     elide: Text.ElideRight
 }

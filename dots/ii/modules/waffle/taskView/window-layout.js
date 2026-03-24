@@ -1,5 +1,7 @@
 function scaleWindow(hyprlandClient, maxWindowWidth, maxWindowHeight) {
+    if (!hyprlandClient?.size) return Qt.size(maxWindowWidth, maxWindowHeight);
     const [width, height] = hyprlandClient.size;
+    if (width <= 0 || height <= 0) return Qt.size(maxWindowWidth, maxWindowHeight);
     const [xScale, yScale] = [maxWindowWidth / width, maxWindowHeight / height];
     const scale = Math.min(xScale, yScale);
     return Qt.size(width * scale, height * scale)

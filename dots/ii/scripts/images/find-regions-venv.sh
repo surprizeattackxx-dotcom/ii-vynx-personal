@@ -48,7 +48,7 @@ resolve_wallpaper_path() {
     echo ""
 }
 
-source "$(eval echo "$ILLOGICAL_IMPULSE_VIRTUAL_ENV")/bin/activate"
+source "${ILLOGICAL_IMPULSE_VIRTUAL_ENV/#\~/$HOME}/bin/activate"
 
 injected=$(resolve_wallpaper_path "$@")
 if [[ -n "$injected" ]]; then

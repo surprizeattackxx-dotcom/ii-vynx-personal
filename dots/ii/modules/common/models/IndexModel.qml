@@ -2,5 +2,5 @@ import Quickshell
 
 ScriptModel {
     required property int count
-    values: Array(count).map((_, i) => i)
+    values: Array.from({length: count}, (_, i) => i)
 }

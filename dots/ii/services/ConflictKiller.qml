@@ -28,8 +28,9 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const output = this.text;
-                const conflictingTrays = output.split(";")[0].trim().length > 0;
-                const conflictingNotifications = output.split(";")[1].trim().length > 0;
+                const parts = output.split(";");
+                const conflictingTrays = (parts[0] ?? "").trim().length > 0;
+                const conflictingNotifications = (parts[1] ?? "").trim().length > 0;
                 var openDialog = false;
                 if (conflictingTrays) {
                     if (!Config.options.conflictKiller.autoKillTrays) openDialog = true;

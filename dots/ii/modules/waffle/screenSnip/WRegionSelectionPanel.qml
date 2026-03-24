@@ -101,7 +101,6 @@ PanelWindow {
             default:
                 return ScreenshotAction.Action.Copy;
             }
-            break;
         case WRegionSelectionPanel.MediaType.Video:
             switch (root.videoAction) {
             case WRegionSelectionPanel.VideoAction.Record:

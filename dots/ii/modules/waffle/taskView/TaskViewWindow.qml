@@ -70,7 +70,6 @@ WMouseAreaButton {
         if (event.button === Qt.LeftButton) {
             GlobalStates.overviewOpen = false;
             Hyprland.dispatch(`focuswindow address:${root.hyprlandClient?.address}`);
-            GlobalStates.overviewOpen = false;
         } else if (event.button === Qt.MiddleButton) {
             root.closeWindow();
             event.accepted = true;

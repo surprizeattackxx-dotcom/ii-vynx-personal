@@ -29,7 +29,7 @@ if ! command -v songrec >/dev/null 2>&1 || ! command -v parec >/dev/null 2>&1 ||
     exit 1
 fi
 
-if [ -z "$MONITOR_SOURCE" ] || ! pactl list short sources | grep -q "$MONITOR_SOURCE"; then
+if [ -z "$MONITOR_SOURCE" ] || ! pactl list short sources | grep -qF "$MONITOR_SOURCE"; then
     exit 1
 fi
 

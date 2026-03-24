@@ -145,18 +145,18 @@ Rectangle {
                     WButton {
                         Layout.fillWidth: true
                         implicitHeight: 32
-                        colBackground: Looks.colors.bg1
                         horizontalAlignment: Text.AlignHCenter
-                        text: Translation.tr("Yes")
-                        onClicked: PolkitService.submit(inputField.text)
+                        text: Translation.tr("Cancel")
+                        colBackground: Looks.colors.bg1
+                        onClicked: PolkitService.cancel()
                     }
                     WButton {
                         Layout.fillWidth: true
                         implicitHeight: 32
                         horizontalAlignment: Text.AlignHCenter
                         checked: true
-                        text: Translation.tr("No")
-                        onClicked: PolkitService.cancel()
+                        text: Translation.tr("Authenticate")
+                        onClicked: PolkitService.submit(inputField.text)
                     }
                 }
             }

@@ -15,7 +15,7 @@ Item {
     Component.onCompleted: {
         Io.run({
             command: [
-                "/home/donnie/.config/hypr/scripts/Animations.sh",
+                Quickshell.env("HOME") + "/.config/hypr/scripts/Animations.sh",
                 "list"
             ],
             onFinished: (res) => {
@@ -71,7 +71,7 @@ Item {
                     onClicked: {
                         Io.run({
                             command: [
-                                "/home/donnie/.config/hypr/scripts/Animations.sh",
+                                Quickshell.env("HOME") + "/.config/hypr/scripts/Animations.sh",
                                 "apply",
                                 modelData
                             ]

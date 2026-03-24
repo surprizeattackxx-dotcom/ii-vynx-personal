@@ -174,8 +174,12 @@ Button {
                             onClicked: {
                                 root.showActions = false;
                                 const targetPath = root.imageData.is_nsfw ? root.nsfwPath : root.downloadPath;
+                                const safeUrl = StringUtils.shellSingleQuoteEscape(root.imageData.file_url)
+                                const safeName = StringUtils.shellSingleQuoteEscape(root.fileName)
+                                const safePath = StringUtils.shellSingleQuoteEscape(targetPath)
+                                const safeDlPath = StringUtils.shellSingleQuoteEscape(root.downloadPath)
                                 Quickshell.execDetached(["bash", "-c", 
-                                    `mkdir -p '${targetPath}' && curl '${root.imageData.file_url}' -o '${targetPath}/${root.fileName}' && notify-send '${Translation.tr("Download complete")}' '${root.downloadPath}/${root.fileName}' -a 'Shell'`
+                                    `mkdir -p '${safePath}' && curl '${safeUrl}' -o '${safePath}/${safeName}' && notify-send '${StringUtils.shellSingleQuoteEscape(Translation.tr("Download complete"))}' '${safeDlPath}/${safeName}' -a 'Shell'`
                                 ])
                             }
                         }

@@ -144,9 +144,9 @@ Item {
     }
 
     onWindowsChanged: {
-        lastFocusedPerWorkspace = []; focusedXPerWorkspace = [];
+        const newLastFocused = []; const newFocusedX = [];
         
-        const startWs = root.workspaceOffset + 1; // maybe we have to fix this
+        const startWs = root.workspaceOffset + 1;
         const endWs = root.workspaceOffset + 10;
 
         for (var ws = startWs; ws <= endWs; ws++) {
@@ -155,21 +155,23 @@ Item {
             });
 
             if (windowsInWS.length === 0) {
-                lastFocusedPerWorkspace.push(null);
-                focusedXPerWorkspace.push(null);
+                newLastFocused.push(null);
+                newFocusedX.push(null);
             } else {
                 var lastFocused = windowsInWS.reduce(function(a, b) {
                     return (a.focusHistoryID < b.focusHistoryID) ? a : b;
                 });
-                lastFocusedPerWorkspace.push(lastFocused);
+                newLastFocused.push(lastFocused);
                 
                 var monitorX = (root.monitor?.x ?? 0);
                 var monitorReservedX = (root.monitorData?.reserved?.[0] ?? 0);
                 var localX = (lastFocused.at[0] - monitorX - monitorReservedX) * root.scaleRatio;
                 
-                focusedXPerWorkspace.push(localX);
+                newFocusedX.push(localX);
             }
         }
+        lastFocusedPerWorkspace = newLastFocused;
+        focusedXPerWorkspace = newFocusedX;
     }
 
     Rectangle { // Background
