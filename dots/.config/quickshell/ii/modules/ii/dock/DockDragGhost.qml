@@ -91,11 +91,11 @@ Item {
             source: root.fileResolvedIcon
         }
     }
-    
+
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.ArrowCursor
+        cursorShape: Qt.ClosedHandCursor
         acceptedButtons: Qt.NoButton
     }
 }
