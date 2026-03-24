@@ -24,7 +24,7 @@ Item {
     property string previewPath: ""
 
     onFocusChanged: focus => {
-        if (focus && Qt.application.activeKeyboardModifiers === Qt.NoModifier) {
+        if (focus) {
             root.inputField.forceActiveFocus();
         }
     }
@@ -36,7 +36,7 @@ Item {
                 messageListView.contentY = Math.max(0, messageListView.contentY - messageListView.height / 2);
                 event.accepted = true;
             } else if (event.key === Qt.Key_PageDown) {
-                messageListView.contentY = Math.min(messageListView.contentHeight - messageListView.height, messageListView.contentY + messageListView.height / 2);
+                messageListView.contentY = Math.min(messageListView.contentHeight - messageListView.height / 2, messageListView.contentY + messageListView.height / 2);
                 event.accepted = true;
             }
         }
@@ -98,7 +98,6 @@ Item {
             name: "key",
             description: Translation.tr("Set API key"),
             execute: args => {
-                if (args.length === 0) return;
                 if (args[0] == "get") {
                     Ai.printApiKey();
                 } else {
@@ -152,142 +151,59 @@ Item {
             }
         },
         {
-            name: "task",
-            description: Translation.tr("Run a multi-step agentic task. The AI will plan the steps and ask for your approval before executing."),
-            execute: args => {
-                const taskDesc = args.join(" ").trim();
-                if (!taskDesc) {
-                    Ai.addMessage(Translation.tr("Usage: %1task <describe what you want done>\n\nExample: %1task open spotify and play my recommended music").arg(root.commandPrefix), Ai.interfaceRole);
-                    return;
-                }
-                Ai.sendUserMessage(`You are acting as an autonomous agent. Use show_plan to present a step-by-step plan before executing anything. Task: ${taskDesc}`);
-            }
-        },
-        {
-            name: "capabilities",
-            description: Translation.tr("Show all AI tools and what you can ask for"),
-            execute: () => {
-                Ai.addMessage(`## What I can do
-
-### 🖥️ System
-- Run shell commands *(asks approval for anything destructive)*
-- Kill a process — *"kill firefox"*
-- View system logs — *"show recent errors"*
-- Control volume & brightness — *"set volume to 50"*
-- Get/set power profile — *"switch to performance mode"*
-
-### 🪟 Desktop
-- Control Hyprland — *"move this window to workspace 3"*
-- Launch an app — *"open dolphin on workspace 2"*
-- Open a file or URL — *"open ~/Documents/notes.txt"*
-- Dark/light mode — *"switch to dark mode"*
-
-### 🖱️ UI Interaction
-- Click any element on screen — *"click the play button"* (screenshot → click_at)
-- Type into any focused field — *"type hello into the search bar"*
-- Press keys and combos — *"press ctrl+s"*, *"press Return"*
-
-### 📷 Vision
-- Analyze your screen — *"what's on my screen?"* (uses \`take_screenshot\`)
-- Capture a region — *"analyze this part of my screen"* (uses \`capture_region\`)
-- Extract text from screen — *"read the text in that window"* (uses \`ocr_region\`)
-- Read clipboard image — *"analyze the image I copied"* (uses \`read_clipboard_image\`)
-
-### 🎵 Media & Search
-- Play / pause / skip — *"pause music"*, *"skip to next"*
-- Get currently playing — *"what's playing?"*
-- Search Spotify — *"search spotify for lofi hip hop"*
-- Search YouTube, YouTube Music, SoundCloud, Twitch, Bandcamp — *"search youtube for..."*
-- Search Reddit, GitHub — *"search reddit for..."*
-- Search local files — *"find files named report"*
-
-### 🔊 TTS
-- Read text aloud — *"read that back to me"* (uses \`speak\`)
-
-### 🗂️ Productivity
-- Add a to-do — *"remind me to call John"*
-- Set a timer — *"set a 10 minute timer"*
-- Send a notification — *"notify me when done"*
-- Save/read notes — *"save a note: ..."*
-- Export this chat — *"export chat"*
-
-### 🔧 Shell Config
-- Read config — *"show my shell config"*
-- Change settings — *"disable the bar border"*
-
-### 🧠 Memory
-- Remember something — *"remember I prefer dark mode"*
-- Forget something — *"forget my name"*
-- Web search — *"search for latest Hyprland news"*
-- Calculate — *"what is sin(45°)?"*
-- Pick a color — *"open color picker"*
-
-### 🤖 Agentic Tasks
-- Multi-step tasks with plan approval — *"open spotify and play my recommended music"*
-- Or use \`/task\` for explicit agent mode — */task set up a pomodoro timer session*
-- Wait for apps to start before interacting — *"open YouTube and play the latest video"*
-- Click through UIs, type text, press keys automatically
-- Chain any combination of tools in sequence
-
-### 💬 Context always available
-- Active window, open windows, clipboard, current media, date/time, distro
-`, Ai.interfaceRole);
-            }
-        },
-        {
             name: "test",
             description: Translation.tr("Markdown test"),
             execute: () => {
                 Ai.addMessage(`
-                <think>
-                A longer think block to test revealing animation
-                OwO wem ipsum dowo sit amet, consekituwet awipiscing ewit, sed do eiuwsmod tempow inwididunt ut wabowe et dowo mawa. Ut enim ad minim weniam, quis nostwud exeucitation uwuwamcow bowowis nisi ut awiquip ex ea commowo consequat. Duuis aute iwuwe dowo in wepwependewit in wowuptate velit esse ciwwum dowo eu fugiat nuwa pawiatuw. Excepteuw sint occaecat cupidatat non pwowoident, sunt in cuwpa qui officia desewunt mowit anim id est wabowum. Meouw! >w<
-                Mowe uwu wem ipsum!
-                </think>
-                ## ✏️ Markdown test
-                ### Formatting
+<think>
+A longer think block to test revealing animation
+OwO wem ipsum dowo sit amet, consekituwet awipiscing ewit, sed do eiuwsmod tempow inwididunt ut wabowe et dowo mawa. Ut enim ad minim weniam, quis nostwud exeucitation uwuwamcow bowowis nisi ut awiquip ex ea commowo consequat. Duuis aute iwuwe dowo in wepwependewit in wowuptate velit esse ciwwum dowo eu fugiat nuwa pawiatuw. Excepteuw sint occaecat cupidatat non pwowoident, sunt in cuwpa qui officia desewunt mowit anim id est wabowum. Meouw! >w<
+Mowe uwu wem ipsum!
+</think>
+## ✏️ Markdown test
+### Formatting
 
-                - *Italic*, \`Monospace\`, **Bold**, [Link](https://example.com)
-                - Arch lincox icon <img src="${Quickshell.shellPath("assets/icons/arch-symbolic.svg")}" height="${Appearance.font.pixelSize.small}"/>
+- *Italic*, \`Monospace\`, **Bold**, [Link](https://example.com)
+- Arch lincox icon <img src="${Quickshell.shellPath("assets/icons/arch-symbolic.svg")}" height="${Appearance.font.pixelSize.small}"/>
 
-                ### Table
+### Table
 
-                Quickshell vs AGS/Astal
+Quickshell vs AGS/Astal
 
-                |                          | Quickshell       | AGS/Astal         |
-                |--------------------------|------------------|-------------------|
-                | UI Toolkit               | Qt               | Gtk3/Gtk4         |
-                | Language                 | QML              | Js/Ts/Lua         |
-                | Reactivity               | Implied          | Needs declaration |
-                | Widget placement         | Mildly difficult | More intuitive    |
-                | Bluetooth & Wifi support | ❌               | ✅                |
-                | No-delay keybinds        | ✅               | ❌                |
-                | Development              | New APIs         | New syntax        |
+|                          | Quickshell       | AGS/Astal         |
+|--------------------------|------------------|-------------------|
+| UI Toolkit               | Qt               | Gtk3/Gtk4         |
+| Language                 | QML              | Js/Ts/Lua         |
+| Reactivity               | Implied          | Needs declaration |
+| Widget placement         | Mildly difficult | More intuitive    |
+| Bluetooth & Wifi support | ❌               | ✅                |
+| No-delay keybinds        | ✅               | ❌                |
+| Development              | New APIs         | New syntax        |
 
-                ### Code block
+### Code block
 
-                Just a hello world...
+Just a hello world...
 
-                \`\`\`cpp
-                #include <bits/stdc++.h>
-                // This is intentionally very long to test scrolling
-                const std::string GREETING = \"UwU\";
-                int main(int argc, char* argv[]) {
-                    std::cout << GREETING;
-                }
-                \`\`\`
+\`\`\`cpp
+#include <bits/stdc++.h>
+// This is intentionally very long to test scrolling
+const std::string GREETING = \"UwU\";
+int main(int argc, char* argv[]) {
+    std::cout << GREETING;
+}
+\`\`\`
 
-                ### LaTeX
+### LaTeX
 
 
-                Inline w/ dollar signs: $\\frac{1}{2} = \\frac{2}{4}$
+Inline w/ dollar signs: $\\frac{1}{2} = \\frac{2}{4}$
 
-                Inline w/ double dollar signs: $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$
+Inline w/ double dollar signs: $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$
 
-                Inline w/ backslash and square brackets \\[\\int_0^\\infty \\frac{1}{x^2} dx = \\infty\\]
+Inline w/ backslash and square brackets \\[\\int_0^\\infty \\frac{1}{x^2} dx = \\infty\\]
 
-                Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
-                `, Ai.interfaceRole);
+Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
+`, Ai.interfaceRole);
             }
         },
     ]
@@ -328,74 +244,6 @@ Item {
             }
         }
     }
-
-    // ── Sidebar hide/restore for screen automation (take_screenshot, click_at, etc.) ──
-    Connections {
-        target: Ai
-        function onRequestHideSidebars() {
-            Ai._inputLeftWasOpen  = GlobalStates.sidebarLeftOpen  ?? false;
-            Ai._inputRightWasOpen = GlobalStates.sidebarRightOpen ?? false;
-            GlobalStates.sidebarLeftOpen  = false;
-            GlobalStates.sidebarRightOpen = false;
-        }
-        function onRequestRestoreSidebars() {
-            if (Ai._inputLeftWasOpen)  GlobalStates.sidebarLeftOpen  = true;
-            if (Ai._inputRightWasOpen) GlobalStates.sidebarRightOpen = true;
-        }
-    }
-
-    // ── Voice STT ─────────────────────────────────────────────────────────────
-    property bool sttRecording: false
-
-    Connections {
-        target: GlobalStates
-        function onPendingAiInputChanged() {
-            const text = GlobalStates.pendingAiInput;
-            if (text.length > 0) {
-                messageInputField.text = text;
-                messageInputField.forceActiveFocus();
-                GlobalStates.pendingAiInput = "";
-            }
-        }
-        function onSttToggleRequestedChanged() {
-            if (!GlobalStates.sttToggleRequested) return;
-            GlobalStates.sttToggleRequested = false;
-            root.toggleStt();
-        }
-    }
-
-    function toggleStt() {
-        if (root.sttRecording) {
-            startSttProc.running = false;
-            stopSttProc.running = true;
-            root.sttRecording = false;
-            GlobalStates.sttRecording = false;
-        } else {
-            startSttProc.running = true;
-            root.sttRecording = true;
-            GlobalStates.sttRecording = true;
-        }
-    }
-
-    Process {
-        id: startSttProc
-        command: ["bash", Directories.scriptPath + "/ai/start_stt.sh"]
-    }
-
-    Process {
-        id: stopSttProc
-        command: ["bash", Directories.scriptPath + "/ai/stop_stt.sh"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const transcript = this.text.trim();
-                if (transcript.length > 0) {
-                    messageInputField.text = transcript;
-                    messageInputField.forceActiveFocus();
-                }
-            }
-        }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
     component StatusItem: MouseArea {
         id: statusItem
@@ -445,15 +293,14 @@ Item {
         spacing: root.padding
 
         Item {
-            id: messagesContainer
             // Messages
             Layout.fillWidth: true
             Layout.fillHeight: true
             layer.enabled: true
             layer.effect: OpacityMask {
                 maskSource: Rectangle {
-                    width: messagesContainer.width
-                    height: messagesContainer.height
+                    width: swipeView.width
+                    height: swipeView.height
                     radius: Appearance.rounding.small
                 }
             }
@@ -521,63 +368,22 @@ Item {
                 z: 0
                 anchors.fill: parent
                 spacing: 10
-                boundsBehavior: Flickable.StopAtBounds
                 popin: false
                 topMargin: statusBg.implicitHeight + statusBg.anchors.topMargin * 2
-                // Disable scroll animation while AI is streaming — prevents jitter from
-                // the NumberAnimation fighting rapid contentHeight changes token-by-token.
-                suppressScrollAnimation: Ai.isGenerating
 
                 touchpadScrollFactor: Config.options.interactions.scrolling.touchpadScrollFactor * 1.4
                 mouseScrollFactor: Config.options.interactions.scrolling.mouseScrollFactor * 1.4
 
-                // Track whether the user wants to stay pinned at the bottom.
-                // We avoid checking atYEnd inside onContentHeightChanged because
-                // atYEnd is evaluated against the *previous* contentHeight, which
-                // causes it to flicker false on every streaming token → jitter.
-                property bool _autoScroll: true
-
-                onAtYEndChanged: {
-                    // Re-engage auto-scroll the moment the user arrives at the bottom.
-                    if (atYEnd) _autoScroll = true;
+                property int lastResponseLength: 0
+                onContentHeightChanged: {
+                    if (atYEnd)
+                        Qt.callLater(positionViewAtEnd);
                 }
-                onDragStarted: {
-                    _autoScroll = false;
-                }
-                onContentYChanged: {
-                    // If _scrollPending or _countChanging, this contentY change is
-                    // programmatic — don't treat it as user intent to leave auto-scroll.
-                    if (_autoScroll && !_scrollPending && !_countChanging && !atYEnd) {
-                        _autoScroll = false;
-                    }
-                }
-
-                property bool _scrollPending: false
-                property bool _countChanging: false
-
-                function _scheduleScrollToEnd() {
-                    if (!_autoScroll || _scrollPending || atYEnd) return;
-                    _scrollPending = true;
-                    Qt.callLater(() => {
-                        if (_autoScroll && !atYEnd) {
-                            contentY = contentHeight - height;
-                        }
-                        _scrollPending = false;
-                    });
-                }
-
-                onContentHeightChanged: _scheduleScrollToEnd()
                 onCountChanged: {
-                    // Use _countChanging (not _scrollPending) so the ListView's brief
-                    // internal contentY reset on count change doesn't flip _autoScroll off,
-                    // while leaving _scheduleScrollToEnd free to run immediately.
-                    _countChanging = true;
-                    Qt.callLater(() => {
-                        _countChanging = false;
-                        _scheduleScrollToEnd();
-                    });
+                    // Auto-scroll when new messages are added
+                    if (atYEnd)
+                        Qt.callLater(positionViewAtEnd);
                 }
-
 
                 add: null // Prevent function calls from being janky
 
@@ -591,7 +397,9 @@ Item {
                     required property var modelData
                     required property int index
                     messageIndex: index
-                    messageData: Ai.messageByID[modelData]
+                    messageData: {
+                        Ai.messageByID[modelData];
+                    }
                     messageInputField: root.inputField
                 }
             }
@@ -645,8 +453,8 @@ Item {
                             Persistent.states.ai.provider = newValue;
                             Persistent.states.ai.model = Ai.modelsOfProviders[providerSelector.currentValue][0].value
                         }
-
-
+                        
+                        
                         property var allProviderOptions: ({
                             "google": {
                                 displayName: "Google",
@@ -658,34 +466,30 @@ Item {
                                 symbol: "openrouter-symbolic",
                                 value: "openrouter"
                             },
-                            "ollama": {
-                                displayName: "Ollama",
-                                symbol: "ollama-symbolic",   // swap for an ollama icon if you have one
-                                value: "ollama"
-                            },
-                            "mistral": {
-                                displayName: "Mistral",
-                                symbol: "mistral-symbolic",
-                                value: "mistral"
-                            },
-                            "anthropic": {
-                                displayName: "Claude",
-                                symbol: "ai-openai-symbolic",
-                                value: "anthropic"
-                            },
-                        })
-
-                        options: {
-                            var result = [];
-                            var keys = Object.keys(Ai.modelsOfProviders);
-                            for (var i = 0; i < keys.length; i++) {
-                                var key = keys[i];
-                                if (allProviderOptions[key]) {
-                                    result.push(allProviderOptions[key]);
-                                }
+                            "others": {
+                                displayName: Translation.tr("Others"),
+                                icon: "more_horiz",
+                                value: "others"
                             }
-                            return result;
-                        }
+                        })
+                        
+                        options: [
+                            {
+                                displayName: "Google",
+                                symbol: "spark-symbolic",
+                                value: "google"
+                            },
+                            {
+                                displayName: "OpenRouter",
+                                symbol: "openrouter-symbolic",
+                                value: "openrouter"
+                            },
+                            {
+                                displayName: Translation.tr("Others"),
+                                icon: "more_horiz",
+                                value: "others"
+                            }
+                        ]
                     }
 
 
@@ -716,8 +520,8 @@ Item {
                 }
             }
         }
-
-
+        
+        
 
         FlowButtonGroup { // Suggestions
             id: suggestions
@@ -791,7 +595,7 @@ Item {
             }
 
             filePath: root.previewPath
-
+            
         }
 
         Rectangle { // Input area
@@ -827,27 +631,27 @@ Item {
 
                 onContainsDragChanged: {
                     if (currentProvider !== "google") return
-                        root.containsDrag = dropArea.containsDrag
+                    root.containsDrag = dropArea.containsDrag
                 }
 
                 onPreviewPathChanged: {
                     if (currentProvider !== "google") return
-                        root.previewPath = dropArea.previewPath
+                    root.previewPath = dropArea.previewPath
                 }
 
                 property string previewPath: ""
-
+    
                 onEntered: (drag) => {
                     if (currentProvider !== "google") return
-                        if (drag.hasUrls && drag.urls.length > 0) {
-                            previewPath = drag.urls[0]
-                        }
+                    if (drag.hasUrls && drag.urls.length > 0) {
+                        previewPath = drag.urls[0]
+                    }
                 }
-
+                
                 onExited: {
                     previewPath = ""
                 }
-
+                
                 onDropped: (drop) => {
                     if (drop.hasUrls) {
                         for (var i = 0; i < drop.urls.length; i++) {
@@ -857,7 +661,7 @@ Item {
                         drop.accept(Qt.CopyAction)
                     }
                 }
-            }
+            } 
 
             RowLayout { // Input field and send button
                 id: inputFieldRowLayout
@@ -887,56 +691,49 @@ Item {
                             return;
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}provider`)) {
                             root.suggestionQuery = messageInputField.text.split(" ")[1] ?? "";
-
-                            const providers = ["google", "openrouter", "mistral", "ollama", "anthropic"];
-                            const providerDescriptions = {
-                                "google":     {displayName: "Google",     description: "Google's Gemini models"},
-                                "openrouter": {displayName: "OpenRouter", description: "OpenRouter (multi-provider)"},
-                                "mistral":    {displayName: "Mistral",    description: "Mistral's models"},
-                                "ollama":     {displayName: "Ollama",     description: "Local Ollama models"},
-                                "anthropic":  {displayName: "Claude",     description: "Anthropic's Claude models"}
-                            };
-
+                            
+                            const providers = Object.keys(Ai.models)
+                            
                             const providerResults = Fuzzy.go(root.suggestionQuery, providers.map(p => ({
                                 name: Fuzzy.prepare(p),
-                                                                                                       obj: p
+                                obj: p
                             })), {
                                 all: true,
                                 key: "name"
                             });
-
+                            
                             root.suggestionList = providerResults.map(result => {
                                 const providerName = result.target;
-                                const providerInfo = providerDescriptions[providerName];
+                                const providerInfo = Ai.models[providerName];
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "provider ") : ""}${providerName}`,
-                                                                      displayName: providerInfo.displayName,
-                                                                      description: providerInfo.description
+                                    displayName: providerInfo.name.split(" -")[0], // Remove " - model name"
+                                    description: providerInfo.description
                                 };
                             });
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}model`)) {
                             root.suggestionQuery = messageInputField.text.split(" ")[1] ?? "";
-
+                            
                             const providerModels = Ai.modelsOfProviders[Persistent.states.ai.provider] || [];
-
+                            
                             const modelList = providerModels.map(model => ({
                                 name: Fuzzy.prepare(model.value),
-                                                                           obj: model
+                                obj: model
                             }));
 
                             const modelResults = Fuzzy.go(root.suggestionQuery, modelList, {
                                 all: true,
                                 key: "name"
                             });
-
+                            
                             root.suggestionList = modelResults.map(result => {
                                 const modelValue = result.target;
                                 const model = providerModels.find(m => m.value === modelValue);
-
+                                
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "model ") : ""}${model.value}`,
-                                                                   displayName: model.title,
-                                                                   description: model.modelProvider ? `Provider: ${model.modelProvider}` : `${Ai.currentProvider} model`
+                                    displayName: model.title,
+                                    description: model.modelProvider ? `Provider: ${model.modelProvider}` : `${Ai.currentProvider} model`
                                 };
                             });
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}prompt`)) {
@@ -944,7 +741,7 @@ Item {
                             const promptFileResults = Fuzzy.go(root.suggestionQuery, Ai.promptFiles.map(file => {
                                 return {
                                     name: Fuzzy.prepare(file),
-                                                                                                        obj: file
+                                    obj: file
                                 };
                             }), {
                                 all: true,
@@ -953,8 +750,8 @@ Item {
                             root.suggestionList = promptFileResults.map(file => {
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "prompt ") : ""}${file.target}`,
-                                                                        displayName: `${FileUtils.trimFileExt(FileUtils.fileNameForPath(file.target))}`,
-                                                                        description: Translation.tr("Load prompt from %1").arg(file.target)
+                                    displayName: `${FileUtils.trimFileExt(FileUtils.fileNameForPath(file.target))}`,
+                                    description: Translation.tr("Load prompt from %1").arg(file.target)
                                 };
                             });
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}save`)) {
@@ -962,7 +759,7 @@ Item {
                             const promptFileResults = Fuzzy.go(root.suggestionQuery, Ai.savedChats.map(file => {
                                 return {
                                     name: Fuzzy.prepare(file),
-                                                                                                       obj: file
+                                    obj: file
                                 };
                             }), {
                                 all: true,
@@ -972,8 +769,8 @@ Item {
                                 const chatName = FileUtils.trimFileExt(FileUtils.fileNameForPath(file.target)).trim();
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "save ") : ""}${chatName}`,
-                                                                        displayName: `${chatName}`,
-                                                                        description: Translation.tr("Save chat to %1").arg(chatName)
+                                    displayName: `${chatName}`,
+                                    description: Translation.tr("Save chat to %1").arg(chatName)
                                 };
                             });
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}load`)) {
@@ -981,7 +778,7 @@ Item {
                             const promptFileResults = Fuzzy.go(root.suggestionQuery, Ai.savedChats.map(file => {
                                 return {
                                     name: Fuzzy.prepare(file),
-                                                                                                       obj: file
+                                    obj: file
                                 };
                             }), {
                                 all: true,
@@ -991,8 +788,8 @@ Item {
                                 const chatName = FileUtils.trimFileExt(FileUtils.fileNameForPath(file.target)).trim();
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "load ") : ""}${chatName}`,
-                                                                        displayName: `${chatName}`,
-                                                                        description: Translation.tr(`Load chat from %1`).arg(file.target)
+                                    displayName: `${chatName}`,
+                                    description: Translation.tr(`Load chat from %1`).arg(file.target)
                                 };
                             });
                         } else if (messageInputField.text.startsWith(`${root.commandPrefix}tool`)) {
@@ -1000,7 +797,7 @@ Item {
                             const toolResults = Fuzzy.go(root.suggestionQuery, Ai.availableTools.map(tool => {
                                 return {
                                     name: Fuzzy.prepare(tool),
-                                                                                                     obj: tool
+                                    obj: tool
                                 };
                             }), {
                                 all: true,
@@ -1010,8 +807,8 @@ Item {
                                 const toolName = tool.target;
                                 return {
                                     name: `${messageInputField.text.trim().split(" ").length == 1 ? (root.commandPrefix + "tool ") : ""}${tool.target}`,
-                                                                  displayName: toolName,
-                                                                  description: Ai.toolDescriptions[toolName]
+                                    displayName: toolName,
+                                    description: Ai.toolDescriptions[toolName]
                                 };
                             });
                         } else if (messageInputField.text.startsWith(root.commandPrefix)) {
@@ -1056,7 +853,7 @@ Item {
                             // Intercept Ctrl+V to handle image/file pasting
                             if (event.modifiers & Qt.ShiftModifier) {
                                 // Let Shift+Ctrl+V = plain paste
-                                messageInputField.insert(messageInputField.cursorPosition, Quickshell.clipboardText);
+                                messageInputField.text += Quickshell.clipboardText;
                                 event.accepted = true;
                                 return;
                             }
@@ -1085,32 +882,6 @@ Item {
                                 event.accepted = false;
                             }
                         }
-                    }
-                }
-
-                RippleButton { // Mic button (STT)
-                    id: micButton
-                    Layout.alignment: Qt.AlignTop
-                    Layout.leftMargin: 2
-                    implicitWidth: 40
-                    implicitHeight: 40
-                    buttonRadius: Appearance.rounding.small
-                    toggled: root.sttRecording
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleStt()
-                    }
-
-                    contentItem: MaterialSymbol {
-                        anchors.centerIn: parent
-                        horizontalAlignment: Text.AlignHCenter
-                        iconSize: 22
-                        color: root.sttRecording
-                            ? Appearance.m3colors.m3error
-                            : Appearance.m3colors.m3onSurfaceVariant
-                        text: root.sttRecording ? "stop_circle" : "mic"
                     }
                 }
 
@@ -1169,10 +940,7 @@ Item {
                 ApiInputBoxIndicator {
                     // Model indicator
                     property string currentProvider: Persistent.states.ai.provider
-                    property string providerIcon: currentProvider === "openrouter" ? "openrouter-symbolic"
-                    : currentProvider === "google" ? "spark-symbolic"
-                    : currentProvider === "ollama" ? "ai-symbolic"   // or whatever icon
-                    : "mistral-symbolic"
+                    property string providerIcon: currentProvider === "openrouter" ? "openrouter-symbolic" : currentProvider === "google" ? "spark-symbolic" : "mistral-symbolic"
 
                     symbol: providerIcon
                     text: Persistent.states.ai.model // TODO: add a readable version

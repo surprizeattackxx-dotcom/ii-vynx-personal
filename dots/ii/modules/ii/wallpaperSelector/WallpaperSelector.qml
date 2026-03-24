@@ -58,7 +58,6 @@ Scope {
                 anchors {
                     fill: parent
                 }
-                monitorIsFocused: panelWindow.monitorIsFocused
             }
         }
     }

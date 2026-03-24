@@ -53,24 +53,10 @@ Item {
         anchors.fill: parent
         implicitHeight: parent.height - Appearance.sizes.hyprlandGapsOut * 2
         implicitWidth: sidebarWidth - Appearance.sizes.hyprlandGapsOut * 2
-        // M3: surfaceContainer for the sidebar shell
-        color: Appearance.m3colors.m3surfaceContainer
+        color: Appearance.colors.colLayer0
         border.width: 1
-        border.color: Qt.rgba(
-            Appearance.colors.colPrimary.r,
-            Appearance.colors.colPrimary.g,
-            Appearance.colors.colPrimary.b, 0.18)
+        border.color: Appearance.colors.colLayer0Border
         radius: Appearance.rounding.screenRounding - Appearance.sizes.hyprlandGapsOut + 1
-
-        // ── Edit mode dim overlay ─────────────────────────────────────────────
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: Qt.rgba(0, 0, 0, 0.18)
-            opacity: root.editMode ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 200 } }
-            z: 0
-        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -80,6 +66,7 @@ Item {
             SystemButtonRow {
                 Layout.fillHeight: false
                 Layout.fillWidth: true
+                // Layout.margins: 10
                 Layout.topMargin: 5
                 Layout.bottomMargin: 0
             }
@@ -91,8 +78,8 @@ Item {
                 active: {
                     const configQuickSliders = Config.options.sidebar.quickSliders
                     if (!configQuickSliders.enable) return false
-                        if (!configQuickSliders.showMic && !configQuickSliders.showVolume && !configQuickSliders.showBrightness) return false;
-                        return true;
+                    if (!configQuickSliders.showMic && !configQuickSliders.showVolume && !configQuickSliders.showBrightness) return false;
+                    return true;
                 }
                 sourceComponent: QuickSliders {}
             }
@@ -106,54 +93,6 @@ Item {
                 styleName: "android"
                 sourceComponent: AndroidQuickPanel {
                     editMode: root.editMode
-                }
-            }
-
-            // ── Edit mode overlay label ───────────────────────────────────────
-            Loader {
-                active: root.editMode && Config.options.sidebar.quickToggles.style === "android"
-                Layout.fillWidth: true
-                sourceComponent: Rectangle {
-                    implicitHeight: editModeRow.implicitHeight + 10
-                    radius: Appearance.rounding.small
-                    color: Qt.rgba(
-                        Appearance.colors.colPrimary.r,
-                        Appearance.colors.colPrimary.g,
-                        Appearance.colors.colPrimary.b, 0.12)
-                    border.width: 1
-                    border.color: Qt.rgba(
-                        Appearance.colors.colPrimary.r,
-                        Appearance.colors.colPrimary.g,
-                        Appearance.colors.colPrimary.b, 0.35)
-
-                    RowLayout {
-                        id: editModeRow
-                        anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
-                        spacing: 6
-                        MaterialSymbol {
-                            text: "edit"
-                            iconSize: Appearance.font.pixelSize.normal
-                            color: Appearance.colors.colPrimary
-                        }
-                        StyledText {
-                            Layout.fillWidth: true
-                            text: Translation.tr("Edit mode — LMB toggle · RMB resize · Scroll reorder")
-                            font.pixelSize: Appearance.font.pixelSize.smaller
-                            color: Appearance.colors.colPrimary
-                            wrapMode: Text.WordWrap
-                        }
-                        MaterialSymbol {
-                            text: "close"
-                            iconSize: Appearance.font.pixelSize.normal
-                            color: Appearance.colors.colPrimary
-                            opacity: 0.6
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.editMode = false
-                            }
-                        }
-                    }
                 }
             }
 
@@ -174,17 +113,22 @@ Item {
 
     ToggleDialog {
         shownPropertyString: "showAudioOutputDialog"
-        dialog: VolumeDialog { isSink: true }
+        dialog: VolumeDialog {
+            isSink: true
+        }
     }
+
     ToggleDialog {
         shownPropertyString: "showAudioInputDialog"
-        dialog: VolumeDialog { isSink: false }
+        dialog: VolumeDialog {
+            isSink: false
+        }
     }
+
     ToggleDialog {
         shownPropertyString: "showBluetoothDialog"
         dialog: BluetoothDialog {}
         onShownChanged: {
-            if (!Bluetooth.defaultAdapter) return;
             if (!shown) {
                 Bluetooth.defaultAdapter.discovering = false;
             } else {
@@ -193,10 +137,12 @@ Item {
             }
         }
     }
+
     ToggleDialog {
         shownPropertyString: "showNightLightDialog"
         dialog: NightLightDialog {}
     }
+
     ToggleDialog {
         shownPropertyString: "showWifiDialog"
         dialog: WifiDialog {}
@@ -229,8 +175,7 @@ Item {
                 root[toggleDialogLoader.shownPropertyString] = false;
             }
             function onVisibleChanged() {
-                if (!toggleDialogLoader.item.visible && !root[toggleDialogLoader.shownPropertyString])
-                    toggleDialogLoader.active = false;
+                if (!toggleDialogLoader.item.visible && !root[toggleDialogLoader.shownPropertyString]) toggleDialogLoader.active = false;
             }
         }
     }
@@ -244,43 +189,59 @@ Item {
         active: Config.options.sidebar.quickToggles.style === styleName
         Connections {
             target: quickPanelImplLoader.item
-            function onOpenAudioOutputDialog() { root.showAudioOutputDialog = true; }
-            function onOpenAudioInputDialog()  { root.showAudioInputDialog  = true; }
-            function onOpenBluetoothDialog()   { root.showBluetoothDialog   = true; }
-            function onOpenNightLightDialog()  { root.showNightLightDialog  = true; }
-            function onOpenWifiDialog()        { root.showWifiDialog        = true; }
+            function onOpenAudioOutputDialog() {
+                root.showAudioOutputDialog = true;
+            }
+            function onOpenAudioInputDialog() {
+                root.showAudioInputDialog = true;
+            }
+            function onOpenBluetoothDialog() {
+                root.showBluetoothDialog = true;
+            }
+            function onOpenNightLightDialog() {
+                root.showNightLightDialog = true;
+            }
+            function onOpenWifiDialog() {
+                root.showWifiDialog = true;
+            }
         }
     }
 
     component SystemButtonRow: Item {
         implicitHeight: Math.max(uptimeContainer.implicitHeight, systemButtonsRow.implicitHeight)
 
-        // M3: surfaceContainerHigh pill for uptime
         Rectangle {
             id: uptimeContainer
-            anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
-            color: Appearance.m3colors.m3surfaceContainerHigh
-            radius: height / 2
-            implicitWidth:  uptimeRow.implicitWidth + 24
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                left: parent.left
+            }
+            color: Appearance.colors.colLayer1
+            readonly property int fullRadius: Config.options.appearance.sharpMode ? Appearance.rounding.full : height / 2
+            radius: fullRadius
+            implicitWidth: uptimeRow.implicitWidth + 24
             implicitHeight: uptimeRow.implicitHeight + 8
-
+            
             Row {
                 id: uptimeRow
                 anchors.centerIn: parent
                 spacing: 8
                 CustomIcon {
+                    id: distroIcon
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 25; height: 25
+                    width: 25
+                    height: 25
                     source: SystemInfo.distroIcon
                     colorize: true
-                    color: Appearance.m3colors.m3onSurface
+                    color: Appearance.colors.colOnLayer0
                 }
                 ColumnLayout {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: -4
                     StyledText {
                         font.pixelSize: Appearance.font.pixelSize.small
-                        color: Appearance.m3colors.m3onSurface
+                        color: Appearance.colors.colOnLayer0
                         text: Translation.tr("Up")
                         textFormat: Text.MarkdownText
                     }
@@ -291,14 +252,18 @@ Item {
                         textFormat: Text.MarkdownText
                     }
                 }
+                
             }
         }
 
-        // M3: surfaceContainerHigh pill for system buttons
         ButtonGroup {
             id: systemButtonsRow
-            anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
-            color: Appearance.m3colors.m3surfaceContainerHigh
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                right: parent.right
+            }
+            color: Appearance.colors.colLayer1
             padding: 4
 
             QuickToggleButton {
@@ -313,8 +278,13 @@ Item {
             QuickToggleButton {
                 toggled: false
                 buttonIcon: "restart_alt"
-                onClicked: { Hyprland.dispatch("reload"); Quickshell.reload(true); }
-                StyledToolTip { text: Translation.tr("Reload Hyprland & Quickshell") }
+                onClicked: {
+                    Hyprland.dispatch("reload");
+                    Quickshell.reload(true);
+                }
+                StyledToolTip {
+                    text: Translation.tr("Reload Hyprland & Quickshell")
+                }
             }
             QuickToggleButton {
                 toggled: false
@@ -323,7 +293,9 @@ Item {
                     GlobalStates.sidebarRightOpen = false;
                     Quickshell.execDetached(["qs", "-p", root.settingsQmlPath]);
                 }
-                StyledToolTip { text: Translation.tr("Settings") }
+                StyledToolTip {
+                    text: Translation.tr("Settings")
+                }
             }
             QuickToggleButton {
                 id: updateButton
@@ -333,24 +305,34 @@ Item {
                 Timer {
                     id: confirmTimer
                     interval: 2000
-                    onTriggered: { confirmTimer.stop(); updateButton.confirm = false }
+                    onTriggered: {
+                        confirmTimer.stop();
+                        updateButton.confirm = false
+                    }
                 }
                 onClicked: {
                     if (confirm) {
                         GlobalStates.sidebarRightOpen = false;
-                        Quickshell.execDetached(["bash", "-c", Config.options.update.scriptPath + " " + Config.options.update.scriptFlags]);
+                        Quickshell.execDetached(["bash", "-c", Config.options.update.scriptPath + " " + Config.options.update.scriptFlags ]);
                     } else {
-                        confirm = true;
-                        confirmTimer.start();
+                        confirm = true
+                        confirmTimer.start()
                     }
+                    
                 }
-                StyledToolTip { text: Translation.tr("Update the ii-lacuna, make sure to set script path in settings") }
+                StyledToolTip {
+                    text: Translation.tr("Update the ii-vynx, make sure to set script path in settings")
+                }
             }
             QuickToggleButton {
                 toggled: false
                 buttonIcon: "power_settings_new"
-                onClicked: { GlobalStates.sessionOpen = true; }
-                StyledToolTip { text: Translation.tr("Session") }
+                onClicked: {
+                    GlobalStates.sessionOpen = true;
+                }
+                StyledToolTip {
+                    text: Translation.tr("Session")
+                }
             }
         }
     }

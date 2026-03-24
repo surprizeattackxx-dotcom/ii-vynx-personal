@@ -171,6 +171,18 @@ Singleton {
                 property int seconds: 0
             }
 
+            property JsonObject settings: JsonObject {
+                property JsonObject fonts: JsonObject {
+                    property string main: "Google Sans Flex"
+                    property string numbers: "Google Sans Flex"
+                    property string title: "Google Sans Flex"
+                    property string iconNerd: "JetBrains Mono NF"
+                    property string monospace: "JetBrains Mono NF"
+                    property string reading: "Readex Pro"
+                    property string expressive: "Space Grotesk" 
+                }
+            }
+
             property JsonObject timer: JsonObject {
                 property JsonObject pomodoro: JsonObject {
                     property bool running: false

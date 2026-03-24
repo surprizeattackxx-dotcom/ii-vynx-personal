@@ -19,24 +19,22 @@ RippleButton {
 
     property bool builtInTheme: false
     readonly property string builtInThemeFilePath: builtInThemeDirectory + "/" + colorScheme + ".json"
-    readonly property string builtInThemeCommand: `jq -r '.primary, .primary_container, .secondary' '${builtInThemeFilePath}'`
+    readonly property string builtInThemeCommand: ` jq -r '.primary, .primary_container, .secondary' ${builtInThemeFilePath}`
 
     property bool customTheme: false
     readonly property string customThemeFilePath: customThemeDirectory + "/" + colorScheme + ".json"
-    readonly property string customThemeCommand: `jq -r '.primary, .primary_container, .secondary' '${customThemeFilePath}'`
+    readonly property string customThemeCommand: ` jq -r '.primary, .primary_container, .secondary' ${customThemeFilePath}`  
 
     property color accentColor
     readonly property bool toggled: Config.options.appearance.palette.type === root.colorScheme
 
+    readonly property string wallpaperPath: Config.options.background.wallpaperPath
     readonly property string scriptPath: FileUtils.trimFileProtocol(`${Directories.scriptPath}/colors/generate_colors_material.py`)
+    readonly property string grepCommand: "grep -E '^[[:space:]]*(primary|primaryContainer|secondary)[[:space:]]*:' | grep -oE '#[0-9A-Fa-f]{6}'" // some magic to extract hex colors from the script output
+    property string scriptArguments: ` --scheme ${root.colorScheme} --debug | ${root.grepCommand}`
 
-    // Wallpaper scheme preview: run generate_colors_material with the current wallpaper
-    // and extract primary/primaryContainer/secondary from SCSS output ($varname: #hex;)
-    readonly property string wallpaperPreviewCommand:
-        `WALL="${Config.options.background.wallpaperPath}"; ` +
-        `[[ -z "$WALL" ]] && WALL=$(swww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //'); ` +
-        `"$HOME/.local/state/quickshell/.venv/bin/python3" "${root.scriptPath}" --path "$WALL" --scheme ${root.colorScheme === "scheme-auto" ? "scheme-tonal-spot" : root.colorScheme} 2>/dev/null ` +
-        `| grep -E '^\\$(primary|primaryContainer|secondary):' | grep -oE '#[0-9A-Fa-f]{6}'`
+    property string fullCommand: `python3 ${root.scriptPath} --color "$(${root.accentColorCommand})" ${root.scriptArguments}`
+    readonly property string accentColorCommand: `python3 ${root.scriptPath} --path ${Config.options.background.wallpaperPath} --debug | grep "Accent color" | awk '{print $NF}'`
 
     property color primaryColor: "transparent"
     property color secondaryColor: "transparent"
@@ -45,7 +43,7 @@ RippleButton {
     property bool loaded: false
     property bool shouldLoad: false
 
-    signal deleteRequested(string schemeName)
+    readonly property bool sharpMode: Config.options.appearance.sharpMode
 
     colBackground: toggled ? Appearance.colors.colPrimaryContainer : Appearance.colors.colLayer2
     colBackgroundHover: toggled ? Appearance.colors.colPrimaryContainerHover : Appearance.colors.colLayer2Hover
@@ -57,21 +55,19 @@ RippleButton {
     implicitHeight: 64
 
     onClicked: {
-        Config.options.appearance.palette.type = root.colorScheme;
         if (customTheme) {
-            Quickshell.execDetached([Directories.applyCustomThemeScriptPath, root.customThemeFilePath]);
+            Config.options.appearance.palette.type = root.colorScheme;
+            Quickshell.execDetached(["bash", "-c", `cp ${root.customThemeFilePath} ${Directories.generatedMaterialThemePath}`]);
         } else if (builtInTheme) {
-            Quickshell.execDetached([Directories.applyCustomThemeScriptPath, root.builtInThemeFilePath]);
+            Config.options.appearance.palette.type = root.colorScheme;
+            Quickshell.execDetached(["bash", "-c", `cp ${root.builtInThemeFilePath} ${Directories.generatedMaterialThemePath}`]);
         } else {
-            Quickshell.execDetached(["bash", "-c",
-                `WALL='${Config.options.background.wallpaperPath}'; ` +
-                `[[ -z "$WALL" ]] && WALL=$(swww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //'); ` +
-                `${Directories.wallpaperSwitchScriptPath} --noswitch --image "$WALL" --type ${root.colorScheme}`
-            ]);
+            Config.options.appearance.palette.type = root.colorScheme;
+            Quickshell.execDetached(["bash", "-c", `${Directories.wallpaperSwitchScriptPath} --noswitch`]);
         }
     }
 
-    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.wallpaperPreviewCommand
+    property var effectiveCommand: root.customTheme ? root.customThemeCommand : root.builtInTheme ? root.builtInThemeCommand : root.fullCommand
 
     onShouldLoadChanged: {
         if (shouldLoad && !loaded) {
@@ -118,10 +114,10 @@ RippleButton {
             anchors {
                 centerIn: parent
                 margins: 8
-            }
+            }    
             implicitWidth: root.implicitHeight - 16
             implicitHeight: root.implicitHeight - 16
-
+            
             antialiasing: true
 
             onPaint: {
@@ -131,48 +127,48 @@ RippleButton {
                 var radius = width / 2;
 
                 ctx.reset();
-                ctx.beginPath();
-                ctx.fillStyle = root.primaryColor;
-                ctx.moveTo(centerX, centerY);
 
-                ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
-                ctx.closePath();
-                ctx.fill();
+                // there should be a better way than this...
+                if (root.sharpMode) {
+                    ctx.beginPath();
+                    ctx.fillStyle = root.primaryColor;
+                    ctx.rect(0, 0, width, centerY);
+                    ctx.fill();
 
-                ctx.beginPath();
-                ctx.fillStyle = root.secondaryColor;
-                ctx.moveTo(centerX, centerY);
-                ctx.arc(centerX, centerY, radius, 0, Math.PI / 2, false);
-                ctx.closePath();
-                ctx.fill();
+                    ctx.beginPath();
+                    ctx.fillStyle = root.secondaryColor;
+                    ctx.rect(centerX, centerY, centerX, centerY);
+                    ctx.fill();
 
-                ctx.beginPath();
-                ctx.fillStyle = root.tertiaryColor;
-                ctx.moveTo(centerX, centerY);
-                ctx.arc(centerX, centerY, radius, Math.PI / 2, Math.PI, false);
-                ctx.closePath();
-                ctx.fill();
-            }
-        }
+                    ctx.beginPath();
+                    ctx.fillStyle = root.tertiaryColor;
+                    ctx.rect(0, centerY, centerX, centerY);
+                    ctx.fill();
+                } else {
+                    ctx.beginPath();
+                    ctx.fillStyle = root.primaryColor;
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
+                    ctx.closePath();
+                    ctx.fill();
 
-        // Delete button — only shown on custom themes
-        Loader {
-            active: root.customTheme
-            anchors { top: parent.top; right: parent.right; margins: 4 }
-            sourceComponent: Rectangle {
-                width: 20; height: 20; radius: 10
-                color: deleteHover.hovered
-                ? Qt.rgba(Appearance.colors.colError.r, Appearance.colors.colError.g, Appearance.colors.colError.b, 0.85)
-                : Qt.rgba(Appearance.colors.colError.r, Appearance.colors.colError.g, Appearance.colors.colError.b, 0.55)
-                Behavior on color { ColorAnimation { duration: 120 } }
-                HoverHandler { id: deleteHover }
-                MaterialSymbol { anchors.centerIn: parent; text: "close"; iconSize: 12; color: "white" }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: (e) => { e.accepted = true; root.deleteRequested(root.colorScheme) }
+                    ctx.beginPath();
+                    ctx.fillStyle = root.secondaryColor;
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, radius, 0, Math.PI / 2, false);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.beginPath();
+                    ctx.fillStyle = root.tertiaryColor;
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, radius, Math.PI / 2, Math.PI, false);
+                    ctx.closePath();
+                    ctx.fill();
                 }
             }
         }
+
     }
+
 }
