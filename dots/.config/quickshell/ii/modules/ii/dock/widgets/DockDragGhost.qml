@@ -6,7 +6,6 @@ import qs.modules.common
 import qs.modules.common.widgets
 import qs.services
 import qs.modules.common.functions
-import "./widgets"
 
 Item {
     id: root

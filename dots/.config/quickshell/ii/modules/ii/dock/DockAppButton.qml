@@ -5,6 +5,8 @@ import qs.modules.common.functions
 import qs
 import QtQuick
 
+import "./widgets"
+
 DockButton {
     id: root
 
