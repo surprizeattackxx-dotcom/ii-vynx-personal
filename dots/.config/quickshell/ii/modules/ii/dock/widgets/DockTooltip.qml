@@ -13,7 +13,11 @@ PopupWindow {
     property bool showTooltip: false
     property int tooltipOffset: -12
     
-    property string dockPosition: (typeof dock !== "undefined") ? dock.dockEffectivePosition : "bottom"
+    property string dockPosition: {
+        const pos = Config.options?.dock?.position ?? "bottom"
+        if (pos !== "auto") return pos
+        return (Config.options?.bar?.bottom && !Config.options?.bar?.vertical) ? "top" : "bottom"
+    }
 
     anchor.window: parentItem?.QsWindow?.window
     implicitWidth: tooltipRect.implicitWidth
@@ -21,7 +25,7 @@ PopupWindow {
 
     anchor.rect.x: {
         if (!parentItem) return 0
-        let _ = parentItem.x + parentItem.y
+        let _ = parentItem.x + parentItem.y + parentItem.width + rootToolTipPopup.width
         const mapped = parentItem.mapToItem(null, 0, 0)
         
         if (dockPosition === "left") {
@@ -35,7 +39,7 @@ PopupWindow {
     
     anchor.rect.y: {
         if (!parentItem) return 0
-        let _ = parentItem.x + parentItem.y
+        let _ = parentItem.x + parentItem.y + parentItem.height + rootToolTipPopup.height
         const mapped = parentItem.mapToItem(null, 0, 0)
         
         if (dockPosition === "top") {

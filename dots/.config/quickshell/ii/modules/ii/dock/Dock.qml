@@ -46,8 +46,8 @@ Scope {
             dockWidth:     opts.isVertical ? contentW + gapsOut * 2 : Math.min(contentW + gapsOut * 2, maxW),
             dockHeight:    opts.isVertical ? Math.min(contentH + gapsOut * 2, maxH) : contentH + gapsOut * 2,
             dockThickness: opts.isVertical ? contentW + gapsOut * 2 : contentH + gapsOut * 2,
-            backgroundWidth:  opts.isVertical ? contentW : Math.min(contentW, maxW - gapsOut * 2),
-            backgroundHeight: opts.isVertical ? Math.min(contentH, maxH - gapsOut * 2) : contentH
+            backgroundWidth:  Math.max(1, opts.isVertical ? contentW : Math.min(contentW, maxW - gapsOut * 2)),
+            backgroundHeight: Math.max(1, opts.isVertical ? Math.min(contentH, maxH - gapsOut * 2) : contentH)
         }
     }
 
