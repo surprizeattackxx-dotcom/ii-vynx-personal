@@ -446,6 +446,30 @@ ContentPage {
             visible: settingsClock.cookiePresent
             title: Translation.tr("Cookie clock settings")
 
+            ConfigSwitch {
+                buttonIcon: "wand_stars"
+                text: Translation.tr("Auto styling with Gemini")
+                checked: Config.options.background.widgets.clock.cookie.aiStyling
+                onCheckedChanged: {
+                    Config.options.background.widgets.clock.cookie.aiStyling = checked;
+                }
+                StyledToolTip {
+                    text: Translation.tr("Uses Gemini to categorize the wallpaper then picks a preset based on it.\nYou'll need to set Gemini API key on the left sidebar first.\nImages are downscaled for performance, but just to be safe,\ndo not select wallpapers with sensitive information.")
+                }
+            }
+
+            ConfigSwitch {
+                buttonIcon: "airwave"
+                text: Translation.tr("Use old sine wave cookie implementation")
+                checked: Config.options.background.widgets.clock.cookie.useSineCookie
+                onCheckedChanged: {
+                    Config.options.background.widgets.clock.cookie.useSineCookie = checked;
+                }
+                StyledToolTip {
+                    text: Translation.tr("Looks a bit softer and more consistent with different number of sides,\nbut has less impressive morphing")
+                }
+            }
+
             ConfigSpinBox {
                 enabled: Config.options.background.widgets.clock.cookie.backgroundStyle !== "shape"
                 icon: "add_triangle"
@@ -467,7 +491,7 @@ ContentPage {
                     Config.options.background.widgets.clock.cookie.constantlyRotate = checked;
                 }
                 StyledToolTip {
-                    text: "Makes the clock always rotate. This is extremely expensive\n(expect 50% usage on Intel UHD Graphics) and thus impractical."
+                    text: Translation.tr("Makes the clock always rotate. This is extremely expensive\n(expect 50% usage on Intel UHD Graphics) and thus impractical.")
                 }
             }
 
@@ -485,7 +509,7 @@ ContentPage {
                         Config.options.background.widgets.clock.cookie.hourMarks = checked;
                     }
                     StyledToolTip {
-                        text: "Can only be turned on using the 'Dots' or 'Full' dial style for aesthetic reasons"
+                        text: Translation.tr("Can only be turned on using the 'Dots' or 'Full' dial style for aesthetic reasons")
                     }
                 }
 
@@ -501,7 +525,7 @@ ContentPage {
                         Config.options.background.widgets.clock.cookie.timeIndicators = checked;
                     }
                     StyledToolTip {
-                        text: "Can't be turned on when using 'Numbers' dial style for aesthetic reasons"
+                        text: Translation.tr("Can't be turned on when using 'Numbers' dial style for aesthetic reasons")
                     }
                 }
             }
