@@ -444,6 +444,10 @@ Singleton {
                 property list<string> pinnedFiles: []
             }
 
+            property JsonObject hyprland: JsonObject {
+                property string defaultHyprlandLayout: "dwindle" // Options: dwindle, monocle, master // It's best to not use scrolling
+            }
+
             property JsonObject interactions: JsonObject {
                 property JsonObject scrolling: JsonObject {
                     property bool fasterTouchpadScroll: false // Enable faster scrolling with touchpad

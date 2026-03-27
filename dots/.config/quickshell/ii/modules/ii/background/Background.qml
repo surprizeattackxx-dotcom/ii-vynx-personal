@@ -71,7 +71,7 @@ Variants {
             animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this)
         }
 
-        readonly property bool isScrollingLayout: GlobalStates.isScrollingLayout
+        readonly property bool isScrollingLayout: Persistent.states.hyprland.layout === "scrolling"
 
         property var zoomLevels: {  // has to be reverted compared to background
             "in": { default: 1.04, zoomed: 1 },
