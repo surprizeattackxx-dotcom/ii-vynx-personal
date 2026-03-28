@@ -155,7 +155,7 @@ Item {
         anchors.horizontalCenterOffset: artworkEnabled ? 0 : mediaCircProgSlot.width / 2
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignHCenter
-        width: artworkEnabled ? parent.implicitWidth - (artworkItem.width + mediaCircProgSlot.width + artworkContentPadding) : parent.implicitWidth - mediaCircProgSlot.width
+        width: artworkEnabled ? parent.implicitWidth - (artworkItem.width + mediaCircProgSlot.width + artworkContentPadding + 20) : parent.implicitWidth - mediaCircProgSlot.width - 20
         elide: Text.ElideRight
         color: Appearance.colors.colOnLayer1
         text: `${cleanedTitle}${activePlayer?.trackArtist ? ' • ' + activePlayer.trackArtist : ''}`
