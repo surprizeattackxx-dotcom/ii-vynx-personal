@@ -158,7 +158,7 @@ Item {
             verticalCenterOffset: 1 // to vertically center it
         }
         horizontalAlignment: Text.AlignHCenter
-        width: artworkEnabled ? parent.implicitWidth - (artworkItem.width + mediaCircProgSlot.width + artworkContentPadding + 20) : parent.implicitWidth - mediaCircProgSlot.width - 20
+        width: artworkEnabled ? parent.implicitWidth - (artworkItem.width + mediaCircProgSlot.width + artworkContentPadding + 16) : parent.implicitWidth - mediaCircProgSlot.width - 16
         elide: Text.ElideRight
         color: Appearance.colors.colOnLayer1
         text: `${cleanedTitle}${activePlayer?.trackArtist ? ' • ' + activePlayer.trackArtist : ''}`
