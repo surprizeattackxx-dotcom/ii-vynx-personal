@@ -271,6 +271,7 @@ if [ "$NO_CONFIRM" = true ]; then
     echo -e "${RED}Skipping all confirmations...${NC}"
     echo -e "${RED}WARNING: This may cause issues!${NC}"
     echo ""
+    sleep 4.0
 fi
 
 if [ "$FULL_INSTALL" = true ]; then
