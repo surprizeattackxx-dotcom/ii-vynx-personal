@@ -108,7 +108,7 @@ Scope { // Scope
             }
 
             exclusionMode: ExclusionMode.Normal
-            exclusiveZone: root.pin ? sidebarWidth : 0
+            exclusiveZone: root.pin ? sidebarWidth - Appearance.sizes.hyprlandGapsOut - Appearance.sizes.elevationMargin : 0
             implicitWidth: Appearance.sizes.sidebarWidthExtended + Appearance.sizes.elevationMargin
             WlrLayershell.namespace: root.isOnLeft ? "quickshell:sidebarLeft" : "quickshell:sidebarRight"
             // Hyprland 0.49: OnDemand is Exclusive, Exclusive just breaks click-outside-to-close
@@ -145,7 +145,7 @@ Scope { // Scope
             Connections {
                 target: GlobalFocusGrab
                 function onDismissed() {
-                    panelWindow.hide();
+                    if (!root.pin) panelWindow.hide();
                 }
             }
 
@@ -167,9 +167,30 @@ Scope { // Scope
                 height: parent.height - (Appearance.sizes.hyprlandGapsOut * 2)
                 y: Appearance.sizes.hyprlandGapsOut
                 width: panelWindow.sidebarWidth - Appearance.sizes.hyprlandGapsOut - Appearance.sizes.elevationMargin
+                property bool _initialized: false
 
+                Timer {
+                    interval: 2500 // Avoid animations on first show
+                    running: true
+                    onTriggered: sidebarLeftBackground._initialized = true
+                }
+
+                Behavior on height {
+                    enabled: sidebarLeftBackground._initialized
+                    animation: Appearance.animation.elementResize.numberAnimation.createObject(this)
+                }
+                Behavior on y {
+                    animation: Appearance.animation.elementResize.numberAnimation.createObject(this)
+                }
                 Behavior on width {
                     animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
+                }
+
+                Behavior on anchors.leftMargin {
+                    animation: Appearance.animation.elementResize.numberAnimation.createObject(this)
+                }
+                Behavior on anchors.rightMargin {
+                    animation: Appearance.animation.elementResize.numberAnimation.createObject(this)
                 }
 
                 state: root.isOnLeft ? "left" : "right"
@@ -183,7 +204,7 @@ Scope { // Scope
                         }
                         PropertyChanges {
                             target: sidebarLeftBackground
-                            anchors.leftMargin: Appearance.sizes.hyprlandGapsOut
+                            anchors.leftMargin: root.pin ? 0 : Appearance.sizes.hyprlandGapsOut
                             anchors.rightMargin: 0
                         }
                     },
@@ -196,7 +217,7 @@ Scope { // Scope
                         }
                         PropertyChanges {
                             target: sidebarLeftBackground
-                            anchors.rightMargin: Appearance.sizes.hyprlandGapsOut
+                            anchors.rightMargin: root.pin ? 0 : Appearance.sizes.hyprlandGapsOut
                             anchors.leftMargin: 0
                         }
                     }
@@ -218,6 +239,56 @@ Scope { // Scope
                     }
                 }
             }
+
+            property bool pinned: root.pin
+            onPinnedChanged: {
+                if (root.pin) return;
+                roundDecorators.active = false
+            }
+
+            Timer {
+                running: root.pin
+                interval: 150
+                onTriggered: {
+                    if (!root.pin) return;
+                    roundDecorators.active = true
+                }
+            }
+
+            Loader {
+                id: roundDecorators
+                active: false
+                anchors {
+                    top: parent.top
+                    bottom: parent.bottom
+                    left: root.isOnLeft ? sidebarLeftBackground.right : undefined
+                    right: !root.isOnLeft ? sidebarLeftBackground.left : undefined
+                }
+                width: Appearance.rounding.screenRounding
+
+                sourceComponent: Item {
+                    RoundCorner {
+                        anchors {
+                            top: parent.top
+                            left: root.isOnLeft ? parent.left : undefined
+                            right: !root.isOnLeft ? parent.right : undefined
+                        }
+                        implicitSize: Appearance.rounding.screenRounding
+                        color: Appearance.colors.colLayer0
+                        corner: root.isOnLeft ? RoundCorner.CornerEnum.TopLeft : RoundCorner.CornerEnum.TopRight
+                    }
+                    RoundCorner {
+                        anchors {
+                            bottom: parent.bottom
+                            left: root.isOnLeft ? parent.left : undefined
+                            right: !root.isOnLeft ? parent.right : undefined
+                        }
+                        implicitSize: Appearance.rounding.screenRounding
+                        color: Appearance.colors.colLayer0
+                        corner: root.isOnLeft ? RoundCorner.CornerEnum.BottomLeft : RoundCorner.CornerEnum.BottomRight
+                    }
+                }
+            }
         }
     }
 
@@ -232,7 +303,11 @@ Scope { // Scope
 
             visible: GlobalStates.sidebarLeftOpen
             onVisibleChanged: {
-                if (!visible) GlobalStates.sidebarLeftOpen = false;
+                if (visible) {
+                    if (!root.pin) GlobalFocusGrab.addDismissable(panelWindow);
+                } else {
+                    GlobalFocusGrab.removeDismissable(panelWindow);
+                }
             }
 
             Rectangle {

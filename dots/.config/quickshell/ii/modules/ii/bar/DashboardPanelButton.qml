@@ -46,6 +46,19 @@ RippleButton { // Right sidebar button — left‑click: toggle panel; right‑c
         spacing: 0
 
         Revealer {
+            reveal: Idle.inhibit ?? false
+            Layout.fillHeight: true
+            Layout.rightMargin: reveal ? indicatorsRowLayout.realSpacing : 0
+            Behavior on Layout.rightMargin {
+                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
+            }
+            MaterialSymbol {
+                text: "coffee"
+                iconSize: Appearance.font.pixelSize.larger
+                color: rightSidebarButton.colText
+            }
+        }
+        Revealer {
             reveal: Audio.sink?.audio?.muted ?? false
             Layout.fillHeight: true
             Layout.rightMargin: reveal ? indicatorsRowLayout.realSpacing : 0

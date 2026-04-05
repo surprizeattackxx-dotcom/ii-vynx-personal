@@ -53,6 +53,22 @@ Toolbar {
 
     IconToolbarButton {
         implicitWidth: height
+        onClicked: {
+            if (!toggled) wallpaperSelectorContent.updateColorCache();
+            colorFilterToolbar.visible = !colorFilterToolbar.visible
+            if (!colorFilterToolbar.visible) {
+                wallpaperSelectorContent.activeColorFilter = ""
+            }
+        }
+        toggled: colorFilterToolbar.visible
+        text: "palette"
+        StyledToolTip {
+            text: colorCacheProc.running ? Translation.tr("Updating color cache...") : Translation.tr("Filter by color")
+        }
+    }
+
+    IconToolbarButton {
+        implicitWidth: height
             onClicked: wallpaperSelectorContent.useDarkMode = !wallpaperSelectorContent.useDarkMode
             text: wallpaperSelectorContent.useDarkMode ? "dark_mode" : "light_mode"
         StyledToolTip {

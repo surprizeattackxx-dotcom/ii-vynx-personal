@@ -23,6 +23,7 @@ Item {
     readonly property bool lyricsEnabled: Config.options.bar.mediaPlayer.lyrics.enable ?? false
     readonly property bool useGradientMask: Config.options.bar.mediaPlayer.lyrics.useGradientMask ?? false
     readonly property string lyricsStyle: Config.options.bar.mediaPlayer.lyrics.style
+    readonly property bool artworkEnabled: Config.options.bar.mediaPlayer.artwork.enable
 
     Layout.fillHeight: true
     implicitWidth: LyricsService.hasSyncedLines && root.lyricsEnabled ? lyricsCustomSize : customSize
@@ -34,6 +35,53 @@ Item {
 
     Component.onCompleted: {
         LyricsService.initiliazeLyrics()
+    }
+
+    readonly property string artSource: activePlayer?.trackArtUrl && activePlayer.trackArtUrl !== "" ? activePlayer.trackArtUrl : ""
+
+    Item {
+        id: artworkItem
+        visible: artworkEnabled
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: artworkEnabled ? artworkBoxSize : 0
+        height: artworkEnabled ? artworkBoxSize : 0
+
+        Rectangle {
+            anchors.fill: parent
+            color: Appearance.colors.colPrimaryContainer
+            radius: Appearance.rounding.full
+
+            Image {
+                anchors.fill: parent
+                source: root.artSource
+                fillMode: Image.PreserveAspectCrop
+                cache: false
+                antialiasing: true
+                width: parent.width
+                height: parent.height
+                sourceSize.width: width
+                sourceSize.height: height
+
+                layer.enabled: true
+                layer.effect: OpacityMask {
+                    maskSource: Rectangle {
+                        width: artworkItem.width
+                        height: artworkItem.height
+                        radius: Appearance.rounding.full
+                    }
+                }
+            }
+
+            MaterialSymbol {
+                anchors.centerIn: parent
+                visible: root.artSource.length === 0
+                fill: 1
+                text: "music_note"
+                iconSize: Math.max(12, artworkItem.width * 0.5)
+                color: Appearance.colors.colOnSecondaryContainer
+            }
+        }
     }
 
     MouseArea {
@@ -62,6 +110,7 @@ Item {
 
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
+        x: artworkEnabled ? root.width - width : 0
 
         lineWidth: Appearance.rounding.unsharpen
         value: activePlayer?.position / activePlayer?.length
@@ -76,10 +125,16 @@ Item {
 
             MaterialSymbol {
                 anchors.centerIn: parent
-                fill: 1
-                text: activePlayer?.isPlaying ? "pause" : "music_note"
-                iconSize: Appearance.font.pixelSize.normal
-                color: Appearance.m3colors.m3onSecondaryContainer
+                width: mediaCircProg.implicitSize
+                height: mediaCircProg.implicitSize
+                
+                MaterialSymbol {
+                    anchors.centerIn: parent
+                    fill: 1
+                    text: activePlayer?.isPlaying ? "pause" : "music_note"
+                    iconSize: Appearance.font.pixelSize.normal
+                    color: Appearance.m3colors.m3onSecondaryContainer
+                }
             }
         }
     }
@@ -102,11 +157,11 @@ Item {
         id: lyricsItemLoader
         active: lyricsEnabled
 
-        width: parent.width - mediaCircProg.implicitSize * 2
+        width: artworkEnabled ? parent.width - (artworkItem.width + mediaCircProg.implicitSize * 2) : parent.width - mediaCircProg.implicitSize * 2
         height: parent.height
 
         anchors.left: parent.left
-        anchors.leftMargin: mediaCircProg.implicitSize * 1.5
+        anchors.leftMargin: artworkEnabled ? mediaCircProg.implicitSize * 1.5 + artworkContentPadding : mediaCircProg.implicitSize * 1.5
 
         sourceComponent: Item {
             id: lyricsItem

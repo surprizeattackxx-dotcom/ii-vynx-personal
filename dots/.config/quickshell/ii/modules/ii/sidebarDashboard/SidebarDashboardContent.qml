@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import Quickshell.Bluetooth
 import Quickshell.Hyprland
 
@@ -312,8 +313,8 @@ Item {
                 }
                 onClicked: {
                     if (confirm) {
+                        Quickshell.execDetached([Directories.cliPath, "update", "--no-confirm", "--no-backup"]);
                         GlobalStates.sidebarRightOpen = false;
-                        Quickshell.execDetached(["bash", "-c", Config.options.update.scriptPath + " " + Config.options.update.scriptFlags ]);
                     } else {
                         confirm = true
                         confirmTimer.start()
@@ -321,7 +322,7 @@ Item {
                     
                 }
                 StyledToolTip {
-                    text: Translation.tr("Update the ii-vynx, make sure to set script path in settings")
+                    text: Translation.tr("Update the ii-vynx, make sure you have the vynx-cli installed")
                 }
             }
             QuickToggleButton {

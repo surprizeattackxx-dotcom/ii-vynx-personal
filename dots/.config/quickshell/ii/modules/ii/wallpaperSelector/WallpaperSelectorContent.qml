@@ -23,6 +23,10 @@ MouseArea {
     property var moreOptionsModelData: null
     property string filterText: extraOptions.text
 
+    property string activeColorFilter: ""
+    property real colorCacheProgress: 0
+    property bool isColorFiltering: false
+
     property var apiImages: {
         let allImages = [];
         for (let i = 0; i < WallpaperBrowser.responses.length; i++) {
@@ -45,9 +49,9 @@ MouseArea {
     }
 
     function updateThumbnails() {
-        const totalImageMargin = (Appearance.sizes.wallpaperSelectorItemMargins + Appearance.sizes.wallpaperSelectorItemPadding) * 2
-        const thumbnailSizeName = Images.thumbnailSizeNameForDimensions(grid.cellWidth - totalImageMargin, grid.cellHeight - totalImageMargin)
-        Wallpapers.generateThumbnail(thumbnailSizeName)
+        const totalImageMargin = (Appearance.sizes.wallpaperSelectorItemMargins + Appearance.sizes.wallpaperSelectorItemPadding) * 2;
+        const thumbnailSizeName = Images.thumbnailSizeNameForDimensions(grid.cellWidth - totalImageMargin, grid.cellHeight - totalImageMargin);
+        Wallpapers.generateThumbnail(thumbnailSizeName);
     }
 
     Connections {
@@ -73,6 +77,94 @@ MouseArea {
         id: favouritesModel
     }
 
+    ListModel {
+        id: colorFilteredModel
+    }
+
+    Process {
+        id: colorCacheProc
+        command: [ "bash", Directories.extractColorsScriptPath, Wallpapers.effectiveDirectory ]
+        stdout: SplitParser {
+            onRead: data => {
+                let progress = data.split("/")[0]
+                let wallpaperCount = data.split("/")[1]
+                wallpaperSelectorContent.colorCacheProgress = progress / wallpaperCount
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0) {
+                Wallpapers.loadColorCache();
+            }
+        }
+    }
+
+    function updateColorCache() {
+        console.log("[Wallpapers] Updating color cache for directory", Wallpapers.effectiveDirectory)
+        colorCacheProc.running = true
+    }
+
+    Timer {
+        id: deferredColorFilterTimer
+        interval: 10
+        running: false
+        repeat: false
+        onTriggered: wallpaperSelectorContent.executeColorFilter()
+    }
+
+    function applyColorFilter() {
+        if (!activeColorFilter || activeColorFilter === "") {
+            isColorFiltering = false;
+            colorFilteredModel.clear();
+            grid.loadedCount = 0;
+            loadTimer.restart();
+            return;
+        }
+
+        isColorFiltering = true;
+        colorFilteredModel.clear();
+        deferredColorFilterTimer.restart();
+    }
+
+    function executeColorFilter() {
+        const wps = Wallpapers.wallpapers;
+        let results = [];
+        
+        for (let i = 0; i < wps.length; i++) {
+            const path = wps[i];
+            const colors = Wallpapers.colorCache[path];
+            if (colors && colors.length > 0) {
+                let bestDist = Infinity;
+                for (let j = 0; j < colors.length; j++) {
+                    const dist = ColorUtils.calculateDistance(activeColorFilter, colors[j]);
+                    if (dist < bestDist) bestDist = dist;
+                }
+                if (bestDist < 0.2) {
+                    results.push({ path, bestDist });
+                }
+            }
+        }
+        
+        results.sort((a, b) => a.bestDist - b.bestDist);
+        
+        for (let i = 0; i < results.length; i++) {
+            const path = results[i].path;
+            const fileName = path.split('/').pop();
+            colorFilteredModel.append({
+                filePath: "file://" + path,
+                actualPath: path,
+                fileName: fileName,
+                fileIsDir: false
+            });
+        }
+        grid.loadedCount = 0;
+        loadTimer.restart();
+        isColorFiltering = false;
+    }
+
+    onActiveColorFilterChanged: {
+        applyColorFilter();
+    }
+
     function refreshFavourites() {
         favouritesModel.clear();
         const favs = Persistent.states.wallpaper.favourites;
@@ -91,7 +183,7 @@ MouseArea {
     }
 
     function handleFilePasting(event) {
-        const currentClipboardEntry = Cliphist.entries[0]
+        const currentClipboardEntry = Cliphist.entries[0];
         if (/^\d+\tfile:\/\/\S+/.test(currentClipboardEntry)) {
             const url = StringUtils.cleanCliphistEntry(currentClipboardEntry);
             Wallpapers.setDirectory(FileUtils.trimFileProtocol(decodeURIComponent(url)));
@@ -406,7 +498,7 @@ MouseArea {
 
                     StyledIndeterminateProgressBar {
                         id: indeterminateProgressBar
-                        visible: (Wallpapers.thumbnailGenerationRunning && value == 0) || (wallpaperSelectorContent.browserMode && WallpaperBrowser.runningRequests > 0)
+                        visible: (Wallpapers.thumbnailGenerationRunning && value == 0) || (wallpaperSelectorContent.browserMode && WallpaperBrowser.runningRequests > 0) || (wallpaperSelectorContent.colorCacheProgress === 0 && colorCacheProc.running) || wallpaperSelectorContent.isColorFiltering
                         anchors {
                             bottom: parent.top
                             left: parent.left
@@ -414,6 +506,12 @@ MouseArea {
                             leftMargin: 4
                             rightMargin: 4
                         }
+                    }
+
+                    StyledProgressBar {
+                        visible: wallpaperSelectorContent.colorCacheProgress > 0 && wallpaperSelectorContent.colorCacheProgress < 1
+                        value: wallpaperSelectorContent.colorCacheProgress
+                        anchors.fill: indeterminateProgressBar
                     }
 
                     StyledProgressBar {
@@ -481,7 +579,7 @@ MouseArea {
                             }
                         }
 
-                        model: wallpaperSelectorContent.browserMode ? wallpaperSelectorContent.apiImages : (wallpaperSelectorContent.favMode ? favouritesModel : Wallpapers.folderModel)
+                        model: wallpaperSelectorContent.browserMode ? wallpaperSelectorContent.apiImages : (wallpaperSelectorContent.favMode ? favouritesModel : (wallpaperSelectorContent.activeColorFilter ? colorFilteredModel : Wallpapers.folderModel))
                         onModelChanged: currentIndex = 0
                         delegate: WallpaperDirectoryItem {
                             required property var modelData
@@ -496,7 +594,7 @@ MouseArea {
                             onEntered: {
                                 grid.currentIndex = index;
                             }
-                            
+
                             onActivated: {
                                 wallpaperSelectorContent.selectWallpaperPath(fileModelData.actualPath || fileModelData.filePath);
                             }
@@ -517,6 +615,17 @@ MouseArea {
                                 height: gridDisplayRegion.height
                                 radius: wallpaperGridBackground.radius
                             }
+                        }
+                    }
+
+                    ColorFilterToolbar {
+                        id: colorFilterToolbar
+                        colBackground: Appearance.m3colors.m3surfaceContainerLow
+                        anchors {
+                            bottom: parent.bottom
+                            left: parent.left
+                            leftMargin: 16
+                            bottomMargin: 8
                         }
                     }
 
@@ -550,8 +659,12 @@ MouseArea {
     Connections {
         target: GlobalStates
         function onWallpaperSelectorOpenChanged() {
-            if (GlobalStates.wallpaperSelectorOpen && monitorIsFocused) {
-                filterField.forceActiveFocus();
+            if (GlobalStates.wallpaperSelectorOpen) {
+                if (monitorIsFocused) {
+                    filterField.forceActiveFocus();
+                }
+            } else {
+                colorCacheProc.signal(9)
             }
         }
     }
@@ -560,6 +673,16 @@ MouseArea {
         target: Wallpapers
         function onChanged() {
             GlobalStates.wallpaperSelectorOpen = false;
+        }
+        function onColorCacheChanged() {
+            if (wallpaperSelectorContent.activeColorFilter) {
+                wallpaperSelectorContent.applyColorFilter();
+            }
+        }
+        function onWallpapersChanged() {
+            if (wallpaperSelectorContent.activeColorFilter) {
+                wallpaperSelectorContent.applyColorFilter();
+            }
         }
     }
 }

@@ -14,14 +14,16 @@ Item {
     implicitWidth: visualWidth
     implicitHeight: visualHeight
     property bool vertical: false
-    property bool invertSide: Config?.options.bar.bottom
+    property bool invertSide: false
     property bool trayOverflowOpen: false
     property bool showSeparator: true
-    property bool showOverflowMenu: !Config.options.tray.invertPinnedItems
+    property bool showOverflowMenu: true
     property var activeMenu: null
 
     property list<var> pinnedItems: TrayService.pinnedItems
     property list<var> unpinnedItems: TrayService.unpinnedItems
+    onPinnedItemsChanged: updateVisibility()
+    onUnpinnedItemsChanged: updateVisibility()
 
     onUnpinnedItemsChanged: {
         if (unpinnedItems.length == 0) root.closeOverflowMenu();
@@ -85,7 +87,7 @@ Item {
     GridLayout {
         id: gridLayout
         columns: root.vertical ? 1 : -1
-        anchors.centerIn: parent
+        anchors.fill: parent
         rowSpacing: 8
         columnSpacing: 15
 

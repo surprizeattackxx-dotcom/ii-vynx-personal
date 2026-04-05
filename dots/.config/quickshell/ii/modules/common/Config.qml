@@ -118,6 +118,7 @@ Singleton {
                 property int fakeScreenRounding: 2 // 0: None | 1: Always | 2: When not fullscreen | 3: Wrapped
                 property int wrappedFrameThickness: 10
                 property bool sharpMode: false
+                property int defaultBorderRadius: 18
                 property bool toggleWindowRounding: true // Changes Hyprland window rounding to 0 if sharpMode is true
                 property JsonObject fonts: JsonObject {
                     property bool enableCustom: false
@@ -250,6 +251,7 @@ Singleton {
                         property real y: 100
                     }
                 }
+                property bool animateWallpaperChanges: true
                 property string wallpaperPath: ""
                 property string thumbnailPath: ""
                 property bool hideWhenFullscreen: true
@@ -257,7 +259,7 @@ Singleton {
                     property bool vertical: true
                     property bool autoVertical: false
                     property bool enableWorkspace: true
-                    property real workspaceZoom: 1.07 // Relative to your screen, not wallpaper size
+                    property real workspaceZoom: 1.0 // Relative to wallpaper size
                     property bool enableSidebar: true
                     property real widgetsFactor: 1.2
                 }
@@ -266,6 +268,8 @@ Singleton {
                     property string backgroundShape: "Square"
                     property bool enableBackgroundAnimation: true // It **may** cause nausea for someone
                     property bool changeShellColor: true // Changes the shell color to the album color
+                    property int backgroundOpacity: 50 // In percent
+                    property int backgroundBlurRadius: 120
                     property JsonObject backgroundAnimation: JsonObject {
                         property bool enable: true
                         property int speedScale: 10 // 1: very slow, 10: default, 20: 2x speed etc.
@@ -304,6 +308,10 @@ Singleton {
                 property JsonObject mediaPlayer: JsonObject {
                     property bool useFixedSize: false
                     property int customSize: 250
+                    property int maxSize: 400
+                    property JsonObject artwork: JsonObject {
+                        property bool enable: false
+                    }
                     property JsonObject lyrics: JsonObject {
                         property bool enable: false
                         property int customSize: 400
@@ -358,6 +366,9 @@ Singleton {
                 property JsonObject indicators: JsonObject {
                     property JsonObject notifications: JsonObject {
                         property bool showUnreadCount: false
+                    }
+                    property JsonObject record: JsonObject {
+                        property bool minimal: false
                     }
                 }
                 property JsonObject layouts: JsonObject {
@@ -427,14 +438,24 @@ Singleton {
 
             property JsonObject dock: JsonObject {
                 property bool enable: false
+                property bool isolateMonitors: false
                 property bool monochromeIcons: true
+                property bool dimInactiveIcons: false
                 property real height: 60
                 property real hoverRegionHeight: 2
                 property bool pinnedOnStartup: false
-                property bool hoverToReveal: true // When false, only reveals on empty workspace
-                property list<string> pinnedApps: [ // IDs of pinned entries
+                property bool enablePreview: true
+                property bool hoverToReveal: true
+                property bool enableMediaWidget: false
+                property string position: "bottom"
+                property list<string> pinnedApps: [
                     "org.kde.dolphin", "kitty",]
                 property list<string> ignoredAppRegexes: []
+                property list<string> pinnedFiles: []
+            }
+
+            property JsonObject hyprland: JsonObject {
+                property string defaultHyprlandLayout: "dwindle" // Options: dwindle, monocle, master // It's best to not use scrolling
             }
 
             property JsonObject interactions: JsonObject {
@@ -683,8 +704,9 @@ Singleton {
                 property JsonObject quickSliders: JsonObject {
                     property bool enable: true
                     property bool showMic: true
+                    property bool showGamma: true
                     property bool showVolume: true
-                    property bool showBrightness: true
+                    property bool showBrightness: false // gamma setting also works for brightness
                 }
             }
 

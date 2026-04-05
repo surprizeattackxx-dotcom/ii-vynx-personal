@@ -282,6 +282,20 @@ Singleton {
             }
         }
 
+        property QtObject elementMoveSmall: QtObject {
+            property int duration: animationCurves.expressiveFastSpatialDuration
+            property int type: Easing.BezierSpline
+            property list<real> bezierCurve: animationCurves.expressiveFastSpatial
+            property int velocity: 650
+            property Component numberAnimation: Component {
+                NumberAnimation {
+                    duration: root.animation.elementMoveSmall.duration
+                    easing.type: root.animation.elementMoveSmall.type
+                    easing.bezierCurve: root.animation.elementMoveSmall.bezierCurve
+                }
+            }
+        }
+
         property QtObject elementMoveEnter: QtObject {
             property int duration: 400
             property int type: Easing.BezierSpline
@@ -361,7 +375,7 @@ Singleton {
         property QtObject scroll: QtObject {
             property int duration: 200
             property int type: Easing.BezierSpline
-            property list<real> bezierCurve: animationCurves.standardDecel
+            property list<real> bezierCurve: root.animationCurves.standardDecel
         }
 
         property QtObject menuDecel: QtObject {
@@ -399,6 +413,7 @@ Singleton {
         property real wallpaperSelectorHeight: 690
         property real wallpaperSelectorItemMargins: 8
         property real wallpaperSelectorItemPadding: 6
+        property int dockButtonSize: Math.round((Config.options?.dock.height ?? 60) * 0.85)
     }
 
     syntaxHighlightingTheme: root.m3colors.darkmode ? "Monokai" : "ayu Light"

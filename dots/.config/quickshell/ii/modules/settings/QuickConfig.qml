@@ -649,6 +649,6 @@ ContentPage {
                         copyPathButton.justCopied = false
                     }
                 }
-            }
+            }                          
         }
 }
