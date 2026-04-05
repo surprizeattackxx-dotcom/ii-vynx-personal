@@ -52,7 +52,8 @@ ContentPage {
             colBackground: Appearance.colors.colLayer2
 
             onClicked: {
-                Quickshell.execDetached([Directories.darkModeToggleScriptPath, dark ? "dark" : "light"])
+                Quickshell.execDetached([Directories.darkModeToggleScriptPath, dark ? "dark" : "light"]);
+                MaterialThemeLoader.reloadAfterExternalColorChange();
             }
 
             StyledToolTip {
@@ -106,7 +107,7 @@ ContentPage {
 
                     Process {
                         id: monitorQueryProc
-                        command: ["bash","-c","hyprctl monitors -j | jq -r '.[].name'"]
+                        command: ["bash","-c","hyprctl monitors -j | jq -r 'sort_by(.x) | .[].name'"]
 
                         stdout: SplitParser {
                             onRead: data => {
@@ -216,13 +217,13 @@ ContentPage {
 
                                 height: monitorPreviewsContainer.implicitHeight
 
-                                ThumbnailImage {
+                                Image {
                                     anchors.fill: parent
                                     sourceSize.width: parent.width
                                     sourceSize.height: parent.height
                                     fillMode: Image.PreserveAspectCrop
-                                    sourcePath: FileUtils.trimFileProtocol(monitorTile.wallpaperPath)
-                                    generateThumbnail: false
+                                    source: monitorTile.wallpaperPath
+                                    asynchronous: true
                                     cache: false
 
                                     layer.enabled: true
@@ -543,7 +544,6 @@ ContentPage {
                     title: Translation.tr("Screen round corner")
 
                     ConfigSelectionArray {
-                        register: true
                         currentValue: Config.options.appearance.fakeScreenRounding
                         onSelected: newValue => {
                             Config.options.appearance.fakeScreenRounding = newValue;
@@ -594,7 +594,6 @@ ContentPage {
                 Layout.fillWidth: false
 
                 ConfigSelectionArray {
-                    register: true
                     currentValue: Config.options.bar.barBackgroundStyle
                     onSelected: newValue => {
                         Config.options.bar.barBackgroundStyle = newValue;

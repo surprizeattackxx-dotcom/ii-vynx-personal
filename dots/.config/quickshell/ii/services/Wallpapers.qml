@@ -97,9 +97,11 @@ Singleton {
         id: selectProc
         property string filePath: ""
         property bool darkMode: Appearance.m3colors.darkmode
-        function select(filePath, darkMode = Appearance.m3colors.darkmode) {
+        property string monitor: ""
+        function select(filePath, darkMode = Appearance.m3colors.darkmode, monitor = "") {
             selectProc.filePath = filePath
             selectProc.darkMode = darkMode
+            selectProc.monitor = monitor
             selectProc.exec(["test", "-d", FileUtils.trimFileProtocol(filePath)])
         }
         onExited: (exitCode, exitStatus) => {
@@ -107,12 +109,12 @@ Singleton {
                 setDirectory(selectProc.filePath);
                 return;
             }
-            root.apply(selectProc.filePath, selectProc.darkMode);
+            root.apply(selectProc.filePath, selectProc.darkMode, selectProc.monitor);
         }
     }
 
-    function select(filePath, darkMode = Appearance.m3colors.darkmode) {
-        selectProc.select(filePath, darkMode);
+    function select(filePath, darkMode = Appearance.m3colors.darkmode, monitor = "") {
+        selectProc.select(filePath, darkMode, monitor);
     }
 
     function randomFromCurrentFolder(darkMode = Appearance.m3colors.darkmode) {

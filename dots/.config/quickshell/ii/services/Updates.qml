@@ -23,7 +23,7 @@ Singleton {
             fetcher.running = false
         }
         root.checking = true
-        fetcher.command[2] = "/usr/bin/checkupdates; true"
+        fetcher.command[2] = "{ /usr/bin/checkupdates 2>/dev/null; flatpak remote-ls --updates 2>/dev/null | sed 's/\\t/ /g'; } | grep -v '^$'; true"
         fetcher.running = true
     }
 

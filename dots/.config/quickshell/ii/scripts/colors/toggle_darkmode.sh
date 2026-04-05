@@ -24,8 +24,8 @@ else
     fi
 fi
 
-# Get current wallpaper from swww
-WALLPAPER=$(swww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //')
+# Get current wallpaper from awww
+WALLPAPER=$(awww query 2>/dev/null | grep -o 'image: .*' | head -1 | sed 's/^image: //')
 
 # Fall back to config
 if [[ -z "$WALLPAPER" || ! -f "$WALLPAPER" ]]; then
@@ -38,4 +38,6 @@ if [[ -z "$WALLPAPER" || ! -f "$WALLPAPER" ]]; then
 fi
 
 # --noswitch before --image so the image arg wins (--noswitch resets imgpath from config)
-exec "$SCRIPT_DIR/switchwall.sh" --noswitch --image "$WALLPAPER" --mode "$MODE"
+"$SCRIPT_DIR/switchwall.sh" --noswitch --image "$WALLPAPER" --mode "$MODE"
+# Bump mtime so Quickshell's FileView reliably notices the update (in-place writes can be missed).
+touch "$COLORS_JSON" 2>/dev/null || true

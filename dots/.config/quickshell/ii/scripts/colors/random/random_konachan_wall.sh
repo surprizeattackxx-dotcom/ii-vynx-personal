@@ -34,7 +34,7 @@ mkdir -p "$WALLPAPER_DIR" "$MONITOR_STATE_DIR" "$(dirname "$HISTORY_FILE")"
 current_mode=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | tr -d "'")
 [[ "$current_mode" == "prefer-dark" ]] && MODE="dark" || MODE="light"
 
-# Get cursor position for swww grow transition (awk, no bc dependency)
+# Get cursor position for awww grow transition (awk, no bc dependency)
 read -r _scale screenx screeny _h < <(
     hyprctl monitors -j | jq '.[] | select(.focused) | .scale, .x, .y, .height' | xargs
 )
@@ -95,22 +95,21 @@ for monitor in "${MONITORS[@]}"; do
 
     MONITOR_PATHS[$monitor]="$downloadPath"
 
-    # Apply wallpaper via swww
-    if command -v swww &>/dev/null; then
-        swww img "$downloadPath" \
+    # Apply wallpaper via awww
+    if command -v awww &>/dev/null; then
+        awww img "$downloadPath" \
             --outputs "$monitor" \
             --transition-type grow \
             --transition-pos "${cursorposx},${cursorposy}" \
             --transition-duration 0.8 \
             --transition-fps 60 \
-            --transition-bezier .65,0,.35,1 \
-            --invert-y &
+            --transition-step 90 &
     fi
 
     echo "[konachan] $monitor → $downloadPath"
 done
 
-wait  # Let swww transitions settle
+wait  # Let awww transitions settle
 
 # ---------------------------------------------------------------------------
 # Write monitor state files (used by QuickConfig wallpaper previews)
@@ -145,7 +144,7 @@ if [[ -n "$primary_path" ]]; then
     echo "[konachan] Running color generation (primary: $primary_monitor → $primary_path)"
     "$SCRIPT_DIR/../switchwall.sh" --image "$primary_path" --mode "$MODE" --no-save
 
-    # switchwall's swww call resets all monitors to primary_path.
+    # switchwall's awww call resets all monitors to primary_path.
     # Wait for its transition then restore the other monitors.
     sleep 1
     for monitor in "${MONITORS[@]}"; do
@@ -153,13 +152,13 @@ if [[ -n "$primary_path" ]]; then
         other_path="${MONITOR_PATHS[$monitor]:-}"
         [[ -z "$other_path" || ! -f "$other_path" ]] && continue
         echo "[konachan] Restoring $monitor → $other_path"
-        swww img "$other_path" \
+        awww img "$other_path" \
             --outputs "$monitor" \
             --transition-type grow \
             --transition-pos "0.5,0.5" \
             --transition-duration 0.8 \
             --transition-fps 60 \
-            --transition-bezier .65,0,.35,1 &
+            --transition-step 90 &
     done
     wait
     echo "[konachan] All monitors restored."

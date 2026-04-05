@@ -260,31 +260,30 @@ switch() {
             remove_restore
 
             # Iris-close transition — skipped when --noswitch (palette-only change)
-            if [[ -z "$noswitch_flag" ]] && command -v swww &>/dev/null; then
-                local _swww_output
+            if [[ -z "$noswitch_flag" ]] && command -v awww &>/dev/null; then
+                local _awww_output
                 if [[ -n "$monitor_flag" ]]; then
-                    _swww_output="$monitor_flag"
+                    _awww_output="$monitor_flag"
                 else
-                    _swww_output=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name' 2>/dev/null)
+                    _awww_output=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name' 2>/dev/null)
                 fi
-                swww img "$imgpath" \
-                    ${_swww_output:+--outputs "$_swww_output"} \
+                awww img "$imgpath" \
+                    ${_awww_output:+--outputs "$_awww_output"} \
                     --transition-type grow \
                     --transition-pos "${cursorposx},${cursorposy}" \
                     --transition-duration 0.8 \
                     --transition-fps 60 \
-                    --transition-bezier .65,0,.35,1 \
-                    --invert-y
+                    --transition-step 90
 
                 # Write per-monitor state file
-                if [[ -n "$_swww_output" ]]; then
+                if [[ -n "$_awww_output" ]]; then
                     mkdir -p "$STATE_DIR/user/generated/wallpaper/monitors"
-                    local _state_file="$STATE_DIR/user/generated/wallpaper/monitors/${_swww_output}.json"
+                    local _state_file="$STATE_DIR/user/generated/wallpaper/monitors/${_awww_output}.json"
                     printf '{
     "monitor": "%s",
     "path": "%s"
 }
-' "$_swww_output" "$imgpath" > "${_state_file}.tmp"
+' "$_awww_output" "$imgpath" > "${_state_file}.tmp"
                     mv "${_state_file}.tmp" "$_state_file"
                 fi
             fi
@@ -413,12 +412,12 @@ main() {
                         _mon=$(jq -r '.monitor // empty' "$_state_file" 2>/dev/null)
                         _path=$(jq -r '.path // empty' "$_state_file" 2>/dev/null)
                         if [[ -n "$_mon" && -n "$_path" && -f "$_path" ]]; then
-                            swww img "$_path" --outputs "$_mon" --transition-type none 2>/dev/null &
+                        awww img "$_path" --outputs "$_mon" --transition-type none 2>/dev/null &
                             _restored=1
                         fi
                     done
                 fi
-                [[ $_restored -eq 0 ]] && swww restore 2>/dev/null || true
+                [[ $_restored -eq 0 ]] && awww restore 2>/dev/null || true
                 # Get imgpath for color regeneration from focused monitor state file
                 _focused_mon=$(hyprctl monitors -j | jq -r '.[] | select(.focused==true) | .name' 2>/dev/null)
                 _state="$STATE_DIR/user/generated/wallpaper/monitors/${_focused_mon}.json"

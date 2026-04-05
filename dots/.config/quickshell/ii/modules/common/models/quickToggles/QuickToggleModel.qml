@@ -16,6 +16,8 @@ QtObject {
     required property var mainAction
     property bool hasMenu: false
     property var altAction: null
+    /** If true, altAction runs only on right-click (GroupButton), not on expanded left-click. */
+    property bool rightClickOnlyAlt: false
 
     // Allow stuff like Processes to be declared freely
     default property list<QtObject> data

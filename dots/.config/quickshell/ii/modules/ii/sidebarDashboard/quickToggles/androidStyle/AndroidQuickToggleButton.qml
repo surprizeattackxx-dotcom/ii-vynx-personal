@@ -65,8 +65,12 @@ GroupButton {
     : colText
 
     onClicked: {
-        if (root.expandedSize && root.altAction) root.altAction();
-        else root.mainAction();
+        if (root.expandedSize && toggleModel?.hasMenu && root.altAction)
+            root.altAction();
+        else if (root.expandedSize && root.altAction && !(toggleModel?.rightClickOnlyAlt ?? false))
+            root.altAction();
+        else
+            root.mainAction();
     }
 
     contentItem: RowLayout {

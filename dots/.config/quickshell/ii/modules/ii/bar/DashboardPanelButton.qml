@@ -5,7 +5,8 @@ import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
 
-RippleButton { // Right sidebar button
+RippleButton { // Right sidebar button — left‑click: toggle panel; right‑click: toggle “Follow Night Light” (shell theme tracks hyprsunset)
+
     id: rightSidebarButton
 
     Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
@@ -14,6 +15,11 @@ RippleButton { // Right sidebar button
 
     implicitWidth: indicatorsRowLayout.implicitWidth + 10 * 2
     implicitHeight: indicatorsRowLayout.implicitHeight + 5 * 2
+
+    altAction: () => {
+        if (Persistent.ready)
+            Persistent.states.followNightLight = !Persistent.states.followNightLight;
+    }
 
     buttonRadius: Appearance.rounding.full
     colBackground: Appearance.m3colors.m3surfaceContainerHigh
@@ -94,6 +100,19 @@ RippleButton { // Right sidebar button
             text: BluetoothStatus.connected ? "bluetooth_connected" : BluetoothStatus.enabled ? "bluetooth" : "bluetooth_disabled"
             iconSize: Appearance.font.pixelSize.larger
             color: rightSidebarButton.colText
+        }
+        Revealer {
+            reveal: Persistent.ready && Persistent.states.followNightLight
+            Layout.fillHeight: true
+            Layout.leftMargin: reveal ? indicatorsRowLayout.realSpacing : 0
+            Behavior on Layout.leftMargin {
+                animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this)
+            }
+            MaterialSymbol {
+                text: "routine"
+                iconSize: Appearance.font.pixelSize.smaller
+                color: rightSidebarButton.colText
+            }
         }
     }
 }

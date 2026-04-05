@@ -1,0 +1,11 @@
+# Merge into /etc/nftables.conf, then: sudo nft -f /etc/nftables.conf
+#
+# 1) Inside `chain input { ... }` add (e.g. after the `iif lo accept` line) so guests
+#    can reach dnsmasq (DHCP/DNS) on the host at 192.168.122.1:
+#
+#    iifname "virbr0" accept comment "libvirt: DHCP/DNS and local services from guests"
+#
+# 2) Inside `chain forward { ... }` add so NAT traffic can pass:
+#
+#    iifname "virbr0" accept comment "libvirt default NAT: guest egress"
+#    oifname "virbr0" ct state established,related accept comment "libvirt: replies to guests"

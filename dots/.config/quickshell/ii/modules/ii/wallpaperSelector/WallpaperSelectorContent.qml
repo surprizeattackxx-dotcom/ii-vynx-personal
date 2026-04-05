@@ -18,6 +18,7 @@ MouseArea {
     property bool useDarkMode: Appearance.m3colors.darkmode
     property bool favMode: false
     property bool browserMode: false
+    property string selectedMonitor: ""
 
     property var moreOptionsModelData: null
     property string filterText: extraOptions.text
@@ -102,7 +103,7 @@ MouseArea {
 
     function selectWallpaperPath(filePath) {
         if (filePath && filePath.length > 0) {
-            Wallpapers.select(filePath, wallpaperSelectorContent.useDarkMode);
+            Wallpapers.select(filePath, wallpaperSelectorContent.useDarkMode, wallpaperSelectorContent.selectedMonitor);
             filterText = "";
             wallpaperSelectorContent.browserMode = false;
         }

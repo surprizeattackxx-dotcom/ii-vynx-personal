@@ -2,9 +2,12 @@ pragma Singleton
 
 import QtQuick
 import qs.modules.common
+import qs.services
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+
+// Material shell theme sync when Persistent.states.followNightLight is enabled
 
 /**
  * Simple hyprsunset service with automatic mode.
@@ -133,6 +136,58 @@ Singleton {
         function onColorTemperatureChanged() {
             if (!root.active) return;
             Quickshell.execDetached(["hyprctl", "hyprsunset", "temperature", `${Config.options.light.night.colorTemperature}`]);
+        }
+    }
+
+    // Sync bar / sidebars / notification popups with Night Light (toggle_darkmode.sh → colors.json → Appearance)
+    Process {
+        id: nightLightThemeProc
+        command: []
+        onExited: () => MaterialThemeLoader.reloadAfterExternalColorChange()
+    }
+
+    function runNightLightThemeSync() {
+        if (!Persistent.ready || !Persistent.states.followNightLight)
+            return;
+        const wantDark = root.active;
+        if (wantDark === Appearance.m3colors.darkmode) {
+            MaterialThemeLoader.reloadAfterExternalColorChange();
+            return;
+        }
+        nightLightThemeProc.command = ["bash", Directories.darkModeToggleScriptPath, wantDark ? "dark" : "light"];
+        nightLightThemeProc.running = true;
+    }
+
+    Timer {
+        id: nightLightThemeDebounce
+        interval: 220
+        repeat: false
+        onTriggered: root.runNightLightThemeSync()
+    }
+
+    Connections {
+        target: root
+        function onActiveChanged() {
+            if (Persistent.ready && Persistent.states.followNightLight)
+                nightLightThemeDebounce.restart();
+        }
+    }
+
+    Connections {
+        target: Persistent
+        function onReadyChanged() {
+            if (Persistent.ready && Persistent.states.followNightLight)
+                nightLightThemeDebounce.restart();
+        }
+    }
+
+    Connections {
+        target: Persistent.states
+        function onFollowNightLightChanged() {
+            if (!Persistent.ready)
+                return;
+            if (Persistent.states.followNightLight)
+                nightLightThemeDebounce.restart();
         }
     }
 }

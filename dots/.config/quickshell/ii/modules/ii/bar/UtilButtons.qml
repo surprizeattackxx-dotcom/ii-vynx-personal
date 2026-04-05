@@ -1,4 +1,5 @@
 import qs
+import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
@@ -180,6 +181,7 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
                 onClicked: event => {
                     Quickshell.execDetached([Directories.darkModeToggleScriptPath]);
+                    MaterialThemeLoader.reloadAfterExternalColorChange();
                 }
                 MaterialSymbol {
                     horizontalAlignment: Qt.AlignHCenter

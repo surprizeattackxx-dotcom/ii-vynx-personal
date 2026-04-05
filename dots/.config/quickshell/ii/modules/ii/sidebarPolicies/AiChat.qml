@@ -151,6 +151,13 @@ Item {
             }
         },
         {
+            name: "dream",
+            description: Translation.tr("Consolidate and organize AI memories"),
+            execute: () => {
+                Ai.sendUserMessage("Run the dream tool with action 'auto' to automatically consolidate my memories. Then send a notification with what was cleaned up, and tell me what changed.");
+            }
+        },
+        {
             name: "test",
             description: Translation.tr("Markdown test"),
             execute: () => {
@@ -456,6 +463,11 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                         
                         
                         property var allProviderOptions: ({
+                            "ollama": {
+                                displayName: "Ollama",
+                                symbol: "ollama-symbolic",
+                                value: "ollama"
+                            },
                             "google": {
                                 displayName: "Google",
                                 symbol: "spark-symbolic",
@@ -472,8 +484,13 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                                 value: "others"
                             }
                         })
-                        
+
                         options: [
+                            {
+                                displayName: "Ollama",
+                                symbol: "ollama-symbolic",
+                                value: "ollama"
+                            },
                             {
                                 displayName: "Google",
                                 symbol: "spark-symbolic",
@@ -940,7 +957,7 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                 ApiInputBoxIndicator {
                     // Model indicator
                     property string currentProvider: Persistent.states.ai.provider
-                    property string providerIcon: currentProvider === "openrouter" ? "openrouter-symbolic" : currentProvider === "google" ? "spark-symbolic" : "mistral-symbolic"
+                    property string providerIcon: currentProvider === "openrouter" ? "openrouter-symbolic" : currentProvider === "google" ? "spark-symbolic" : currentProvider === "ollama" ? "ollama-symbolic" : "mistral-symbolic"
 
                     symbol: providerIcon
                     text: Persistent.states.ai.model // TODO: add a readable version
@@ -952,6 +969,14 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                     icon: "service_toolbox"
                     text: Ai.currentTool.charAt(0).toUpperCase() + Ai.currentTool.slice(1)
                     tooltipText: Translation.tr("Current tool: %1\nSet it with %2tool TOOL").arg(Ai.currentTool).arg(root.commandPrefix)
+                }
+
+                ApiInputBoxIndicator {
+                    // Processing indicator
+                    visible: Ai.isGenerating
+                    icon: "hourglass_top"
+                    text: Translation.tr("Processing...")
+                    tooltipText: Translation.tr("The model is generating a response or running a tool")
                 }
 
                 Item {

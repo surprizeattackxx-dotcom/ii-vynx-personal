@@ -2,6 +2,7 @@ import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
+import Quickshell.Hyprland
 
 Toolbar {
     id: extraOptions
@@ -56,6 +57,56 @@ Toolbar {
             text: wallpaperSelectorContent.useDarkMode ? "dark_mode" : "light_mode"
         StyledToolTip {
             text: Translation.tr("Click to toggle light/dark mode\n(applied when wallpaper is chosen)")
+        }
+    }
+
+    // Monitor selector
+    Row {
+        spacing: 4
+        anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+            width: allMonitorLabel.implicitWidth + 12
+            height: 26
+            radius: 13
+            color: wallpaperSelectorContent.selectedMonitor === "" ? Appearance.colors.colPrimary : Appearance.colors.colLayer1
+
+            StyledText {
+                id: allMonitorLabel
+                anchors.centerIn: parent
+                text: Translation.tr("All")
+                color: wallpaperSelectorContent.selectedMonitor === "" ? Appearance.colors.colOnPrimary : Appearance.colors.colOnLayer0
+                font.pixelSize: Appearance.font.pixelSize.small
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: wallpaperSelectorContent.selectedMonitor = ""
+            }
+        }
+
+        Repeater {
+            model: Hyprland.monitors
+            delegate: Rectangle {
+                required property HyprlandMonitor modelData
+                width: monitorLabel.implicitWidth + 12
+                height: 26
+                radius: 13
+                color: wallpaperSelectorContent.selectedMonitor === modelData.name ? Appearance.colors.colPrimary : Appearance.colors.colLayer1
+
+                StyledText {
+                    id: monitorLabel
+                    anchors.centerIn: parent
+                    text: modelData.name
+                    color: wallpaperSelectorContent.selectedMonitor === modelData.name ? Appearance.colors.colOnPrimary : Appearance.colors.colOnLayer0
+                    font.pixelSize: Appearance.font.pixelSize.small
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: wallpaperSelectorContent.selectedMonitor = modelData.name
+                }
+            }
         }
     }
 

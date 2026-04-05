@@ -131,7 +131,7 @@ ContentPage {
             text: Translation.tr("Show due dates")
             checked: Config.options.todo?.showDueDates ?? true
             onCheckedChanged: {
-                Config.options.todo.showDueDates = checked;
+                if (Config.options.todo) Config.options.todo.showDueDates = checked;
             }
             StyledToolTip {
                 text: Translation.tr("Show due date input when adding tasks and highlight overdue items in red")

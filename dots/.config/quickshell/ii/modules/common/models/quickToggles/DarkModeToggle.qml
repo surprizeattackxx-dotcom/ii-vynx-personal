@@ -15,7 +15,14 @@ QuickToggleModel {
     
     mainAction: () => {
         Quickshell.execDetached([Directories.darkModeToggleScriptPath]);
+        MaterialThemeLoader.reloadAfterExternalColorChange();
     }
 
-    tooltipText: Translation.tr("Dark Mode")
+    rightClickOnlyAlt: true
+    altAction: () => {
+        if (Persistent.ready)
+            Persistent.states.followNightLight = !Persistent.states.followNightLight;
+    }
+
+    tooltipText: Translation.tr("Dark Mode — Right-click: Follow Night Light")
 }

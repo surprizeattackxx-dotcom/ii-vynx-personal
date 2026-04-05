@@ -39,6 +39,14 @@ Singleton {
         onTriggered: { if (pendingAction) { pendingAction(); pendingAction = null; } }
     }
 
+    Timer {
+        id: mcpBridgePingTimer
+        interval: 500
+        repeat: false
+        running: true
+        onTriggered: root._pingMcpBridge()
+    }
+
     property string systemPrompt: {
         let prompt = Config.options?.ai?.systemPrompt ?? "";
         for (let key in root.promptSubstitutions) {
@@ -100,7 +108,7 @@ Singleton {
             useCloudModel: true,
             systemPrompt: "You are Sage, a personal assistant specialist. Your job: manage memory, notes, todos, timers, and scheduled tasks. Organise information clearly. When your task is complete, call return_result with a summary.",
             toolNames: ["remember", "memory_file", "search_memory", "manage_notes",
-                        "create_todo", "set_timer", "schedule_task", "kg_store", "kg_query", "calendar", "return_result"]
+                        "create_todo", "set_timer", "schedule_task", "kg_store", "kg_query", "calendar", "dream", "return_result"]
         }
     })
 
@@ -140,6 +148,52 @@ Singleton {
         }
     })
 
+    /** Local Jan-compatible MCP bridge (run ~/.config/quickshell/scripts/mcp-sidebar-bridge/run.sh) */
+    property bool mcpBridgeAvailable: false
+    property string mcpBridgeUrl: "http://127.0.0.1:3847"
+    readonly property var _mcpListCatalogGemini: ({
+        "name": "mcp_list_catalog",
+        "description": "Compact MCP index: server keys and tool names with short blurbs only (no JSON schemas—keeps context small). Prefer skipping this if the user already named a server/tool; call mcp_call directly when possible.",
+        "parameters": { "type": "object", "properties": {} }
+    })
+    readonly property var _mcpCallGemini: ({
+        "name": "mcp_call",
+        "description": "Invoke one tool on a configured MCP server (stdio). Use mcp_list_catalog only when you truly do not know server or tool names. Server keys match Jan: e.g. filesystem, git, github, ollama, time.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "server": { "type": "string", "description": "Server key from catalog (e.g. filesystem, git, homeassistant)" },
+                "tool": { "type": "string", "description": "Tool name from that server" },
+                "arguments": { "type": "object", "description": "Arguments object for the tool (may be empty)" }
+            },
+            "required": ["server", "tool"]
+        }
+    })
+    readonly property var _mcpListCatalogOai: ({
+        "type": "function",
+        "function": {
+            "name": "mcp_list_catalog",
+            "description": "Compact MCP index: server keys and tool names with short blurbs only (no JSON schemas). Prefer skipping if the user already named a server/tool; call mcp_call directly when possible.",
+            "parameters": { "type": "object", "properties": {} }
+        }
+    })
+    readonly property var _mcpCallOai: ({
+        "type": "function",
+        "function": {
+            "name": "mcp_call",
+            "description": "Invoke one tool on a configured MCP server (stdio). Use mcp_list_catalog only when you do not know server or tool names. Server keys match Jan (filesystem, git, github, ollama, etc.).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "server": { "type": "string", "description": "Server key from catalog" },
+                    "tool": { "type": "string", "description": "Tool name from that server" },
+                    "arguments": { "type": "object", "description": "Tool arguments (optional)" }
+                },
+                "required": ["server", "tool"]
+            }
+        }
+    })
+
     // ── Auto-routing tool system ──────────────────────────────────────────────
     // Instead of forcing model to delegate via call_agent, the code detects
     // intent from the user message and gives the model only relevant tools.
@@ -154,7 +208,7 @@ Singleton {
                      "wait_and_screenshot", "manage_tabs", "read_screen_text"],
         "media":   ["play_music", "control_media"],
         "research":["web_search", "read_url", "get_news", "calculate"],
-        "memory":  ["remember", "search_memory", "forget_memory"],
+        "memory":  ["remember", "search_memory", "forget_memory", "dream"],
         "system":  ["run_shell_command", "control_hyprland", "kill_process", "get_system_logs"],
         "comms":   ["notify", "speak", "send_message"],
         "clipboard":["read_clipboard_text", "write_clipboard"],
@@ -165,7 +219,9 @@ Singleton {
                     "create_todo", "manage_notes", "get_notifications", "reply_notification",
                     "control_system", "get_shell_config", "set_shell_config",
                     "workspace_layout", "open_app", "run_task", "calendar",
-                    "pick_color", "export_chat", "call_agent", "show_plan"]
+                    "pick_color", "export_chat", "call_agent", "show_plan", "dream",
+                    "mcp_list_catalog", "mcp_call"],
+        "mcp": ["mcp_list_catalog", "mcp_call"]
     })
 
     // Intent detection keywords
@@ -180,13 +236,16 @@ Singleton {
                      "how to", "why ", "news", "article", "website", "url", "google",
                      "calculate", "math"],
         "memory":  ["remember", "recall", "forget", "memory", "you know", "last time",
-                     "previously"],
+                     "previously", "dream", "consolidate", "clean up memories"],
         "system":  ["command", "terminal", "shell", "logs", "process", "kill ",
                      "workspace", "monitor", "volume", "brightness", "shutdown",
                      "reboot", "restart"],
         "comms":   ["notify", "notification", "speak", "say ", "tell ", "message",
                      "send ", "text "],
-        "clipboard":["clipboard", "copy", "paste", "copied"]
+        "clipboard":["clipboard", "copy", "paste", "copied"],
+        "mcp": ["mcp", "model context", "jan mcp", "mcp server", "home assistant",
+                "gmail", "calendar", "pull request", "github issue", "discord message", "sqlite",
+                "searx", "notion", "google drive", "filesystem mcp"]
     })
 
     // Detect model tier: "small" (<14B local), "medium" (14-30B local), "large" (cloud or 30B+)
@@ -252,7 +311,8 @@ Singleton {
         if (tier === "medium") {
             const extras = root._toolSets["clipboard"].concat([
                 "run_task", "open_app", "show_plan", "execute_js", "search_app",
-                "control_system", "workspace_layout", "call_agent"
+                "control_system", "workspace_layout", "call_agent",
+                "mcp_list_catalog", "mcp_call"
             ]);
             for (let e = 0; e < extras.length; e++) {
                 if (toolNames.indexOf(extras[e]) === -1) toolNames.push(extras[e]);
@@ -299,14 +359,16 @@ Singleton {
             if (allowedTools !== null) {
                 decls = decls.filter(t => allowedTools.includes(t.name));
             }
-            return [{ functionDeclarations: [...decls, root._callAgentDefGemini] }];
+            const mcpG = root.mcpBridgeAvailable ? [root._mcpListCatalogGemini, root._mcpCallGemini] : [];
+            return [{ functionDeclarations: [...decls, ...mcpG, root._callAgentDefGemini] }];
         }
 
         let filtered = base;
         if (allowedTools !== null) {
             filtered = base.filter(t => allowedTools.includes(t.function?.name || t.name));
         }
-        return [...filtered, root._callAgentDefOai];
+        const mcpO = root.mcpBridgeAvailable ? [root._mcpListCatalogOai, root._mcpCallOai] : [];
+        return [...filtered, ...mcpO, root._callAgentDefOai];
     }
 
     function _finalizeCurrentAgent(result) {
@@ -315,6 +377,8 @@ Singleton {
         root.agentCallStack = root.agentCallStack.slice(0, -1);
         const agentType = root.activeAgentType;
         const agentDisplay = root.agentDefs[agentType]?.displayName || agentType;
+        // Log agent conversation for training data before cleanup
+        root._logAgentTrace(agentType, result);
         // Clean up agent message objects
         const ids = root.agentMsgIDs[agentType] || [];
         for (const id of ids) { delete root.agentMsgByID[id]; }
@@ -350,6 +414,38 @@ Singleton {
     function idForMessage(message) {
         // Generate a unique ID using timestamp and random value
         return Date.now().toString(36) + Math.random().toString(36).substr(2, 8);
+    }
+
+    function _pingMcpBridge() {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE)
+                return;
+            root.mcpBridgeAvailable = (xhr.status >= 200 && xhr.status < 300);
+        };
+        xhr.open("GET", root.mcpBridgeUrl + "/health");
+        xhr.send();
+    }
+
+    function _mcpHttpRequest(method, path, body, message, fnName) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE)
+                return;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                root.addFunctionOutputMessage(fnName, xhr.responseText || "(empty)");
+            } else {
+                root.addFunctionOutputMessage(fnName, "[MCP bridge] HTTP " + xhr.status + "\n" + (xhr.responseText || "") + "\n\nStart the bridge: ~/.config/quickshell/scripts/mcp-sidebar-bridge/run.sh");
+            }
+            requester.makeRequest();
+        };
+        xhr.open(method, root.mcpBridgeUrl + path);
+        if (body) {
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.send(body);
+        } else {
+            xhr.send();
+        }
     }
 
     function safeModelName(modelName) {
@@ -1089,6 +1185,18 @@ Singleton {
                             "extensions": { "type": "string", "description": "Comma-separated file extensions to include (e.g. '.md,.txt,.py'). Defaults to common text/code extensions." }
                         },
                         "required": ["path"]
+                    }
+                },
+                {
+                    "name": "dream",
+                    "description": "Consolidate and organize your memories. Use 'auto' to automatically find and remove duplicates, clean up stale entries, and merge redundant memories. No further action needed — it handles everything. Use 'gather' only if you want to see a raw report without changing anything.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "description": "Action: 'auto' (recommended — automatically consolidate everything), 'gather' (read-only report), 'apply' (manual actions array)" },
+                            "actions": { "type": "array", "items": { "type": "object" }, "description": "Only for 'apply': array of manual actions" }
+                        },
+                        "required": ["action"]
                     }
                 },
                 {
@@ -1942,6 +2050,21 @@ Singleton {
                 {
                     "type": "function",
                     "function": {
+                        "name": "dream",
+                        "description": "Consolidate and organize your memories. Use 'auto' to automatically find and remove duplicates, clean up stale entries, and merge redundant memories. No further action needed — it handles everything.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'auto' (recommended — automatically consolidate), 'gather' (read-only report), 'apply' (manual actions)" },
+                                "actions": { "type": "array", "items": { "type": "object" }, "description": "Only for 'apply': array of manual actions" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "calendar",
                         "description": "Access the user's calendar (Google Calendar via khal). Check schedule, add events, search upcoming.",
                         "parameters": {
@@ -2721,6 +2844,21 @@ Singleton {
                         }
                     }
                 },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "dream",
+                        "description": "Consolidate and organize your memories. Use 'auto' to automatically find and remove duplicates, clean up stale entries, and merge redundant memories. No further action needed — it handles everything.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "description": "Action: 'auto' (recommended — automatically consolidate), 'gather' (read-only report), 'apply' (manual actions)" },
+                                "actions": { "type": "array", "items": { "type": "object" }, "description": "Only for 'apply': array of manual actions" }
+                            },
+                            "required": ["action"]
+                        }
+                    }
+                },
             ],
             "search": [],
             "none": [],
@@ -2819,6 +2957,16 @@ Singleton {
         "mistral": [
             { title: "Mistral Medium 3", value: "mistral-medium-3" }
         ],
+        "ollama": [
+            { title: "Qwen 3.5 9B", value: "qwen3.5:9b" },
+            { title: "Qwen 3.5 27B", value: "qwen3.5:27b" },
+            { title: "Qwen 3 14B", value: "qwen3:14b" },
+            { title: "Ministral 3 8B", value: "ministral-3:8b" },
+            { title: "Qwen 2.5 VL 7B", value: "qwen2.5vl:7b" },
+            { title: "Qwen 3 VL 8B", value: "qwen3-vl:8b" },
+            { title: "Qwen 3 Claude", value: "qwen3-claude" },
+            { title: "MiniMax M2.7 Cloud", value: "minimax-m2.7:cloud" },
+        ],
     }
 
     property var modelsOfProviders: baseModels
@@ -2871,7 +3019,7 @@ Singleton {
     property string requestScriptFilePath: "/tmp/quickshell/ai/request.sh"
     property string pendingFilePath: ""
     // True while the AI requester process is running (streaming a response)
-    readonly property bool isGenerating: requester.running
+    readonly property bool isGenerating: requester.running || commandExecutionProc.running
 
     // Screenshot scaling — used so 4K screenshots are downscaled to 1920px wide
     // before sending to the model. click_at coords are in the scaled space.
@@ -2888,6 +3036,7 @@ Singleton {
     property string _pendingVisionFollowUpKind: ""
     // One send_message per user turn — handler fires makeRequest immediately; model otherwise loops send_message dozens of times.
     property bool _sendMessageIssuedThisTurn: false
+    property bool _sessionLogged: false
 
     Component.onCompleted: {
         // Ensure memories directory exists
@@ -2896,6 +3045,15 @@ Singleton {
         if (Config.options.ai.extraModels.length > 0) {
             modelsOfProviders = mergeModelsFromList(baseModels, Config.options.ai.extraModels)
         }
+    }
+
+    Component.onDestruction: {
+        // Save training data before QS reload destroys state
+        if (root.activeAgentType && root.agentCallStack.length > 0) {
+            root._logAgentTrace(root.activeAgentType, "[interrupted by reload]");
+        }
+        root._logCompletedSession();
+        root.saveChat("lastSession");
     }
 
     function guessModelLogo(model) {
@@ -3168,6 +3326,14 @@ Singleton {
             }
             if (!root._pendingDesktopAction) root.requestRestoreSidebars();
             root.saveChat("lastSession")
+            root._logCompletedSession()
+            // Notify user when the model's full turn is done (not mid-tool-chain)
+            if (!requester.message.functionCall) {
+                const snippet = (requester.message.content || requester.message.rawContent || "").replace(/<[^>]*>/g, "").trim();
+                const preview = snippet.length > 150 ? snippet.substring(0, 150) + "…" : (snippet || "Done");
+                Quickshell.execDetached(["notify-send", "-a", "ii AI", "-i", "neurology", "AI finished", preview]);
+            }
+            root.consecutiveToolCalls = 0;
             root.responseFinished()
         }
 
@@ -3226,11 +3392,29 @@ Singleton {
                 }
                 return m;
             });
-            // Context compaction: when context grows large, drop old tool-result messages
-            // keeping only the most recent ones. Preserves real user/assistant conversation.
-            const TOOL_RESULT_KEEP = 20;
+            // Context compaction: drop old tool results, truncate long ones, cap total context size
+            const TOOL_RESULT_KEEP = 12;
+            const MAX_TOOL_RESULT_CHARS = 2000;
+            const MAX_CONTEXT_MESSAGES = 40;
             let contextArr = trimmedMessageArray;
-            if (contextArr.length > 50) {
+            // Phase 1: Truncate long tool results (all but the most recent 4)
+            const toolIndices = [];
+            for (let i = 0; i < contextArr.length; i++) {
+                if (contextArr[i].functionName && contextArr[i].functionName.length > 0) toolIndices.push(i);
+            }
+            if (toolIndices.length > 4) {
+                for (let t = 0; t < toolIndices.length - 4; t++) {
+                    const idx = toolIndices[t];
+                    const m = contextArr[idx];
+                    if (m.rawContent && m.rawContent.length > MAX_TOOL_RESULT_CHARS) {
+                        const truncated = Object.assign({}, m);
+                        truncated.rawContent = m.rawContent.substring(0, MAX_TOOL_RESULT_CHARS) + "\n[truncated]";
+                        contextArr[idx] = truncated;
+                    }
+                }
+            }
+            // Phase 2: Drop old tool call/result pairs when too many
+            if (contextArr.length > 30) {
                 const toolMsgs = contextArr.filter(m => m.functionName && m.functionName.length > 0);
                 if (toolMsgs.length > TOOL_RESULT_KEEP) {
                     const toDropTools = toolMsgs.slice(0, toolMsgs.length - TOOL_RESULT_KEEP);
@@ -3248,8 +3432,15 @@ Singleton {
                         }
                     }
                     contextArr = contextArr.filter((_, i) => !indicesToRemove.has(i));
-                    console.log(`[AI] Context compacted: dropped ${indicesToRemove.size} messages (tool results + paired assistant tool calls, ${contextArr.length} remaining)`);
+                    console.log(`[AI] Context compacted: dropped ${indicesToRemove.size} messages (${contextArr.length} remaining)`);
                 }
+            }
+            // Phase 3: Hard cap — if still too many messages, keep first 4 + last MAX_CONTEXT_MESSAGES-4
+            if (contextArr.length > MAX_CONTEXT_MESSAGES) {
+                const head = contextArr.slice(0, 4);
+                const tail = contextArr.slice(-(MAX_CONTEXT_MESSAGES - 4));
+                contextArr = [...head, ...tail];
+                console.log(`[AI] Context hard-capped to ${contextArr.length} messages`);
             }
             const agentSysPrompt = root.activeAgentType
                 ? (root.agentDefs[root.activeAgentType]?.systemPrompt || root.systemPrompt)
@@ -3399,6 +3590,7 @@ Singleton {
         root._pendingVisionFollowUpKind = "";
         root._toolCallCounts = ({});
         root._sendMessageIssuedThisTurn = false;
+        root._sessionLogged = false;
         root._lastUserMessageText = message; // Store for intent detection
         root.requestRestoreSidebars();
         root.addMessage(message, "user");
@@ -3661,7 +3853,26 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
         //     requester.makeRequest();
         //     return;
         // }
-        if (name === "call_agent") {
+        if (name === "mcp_list_catalog") {
+            root._mcpHttpRequest("GET", "/catalog", null, message, "mcp_list_catalog");
+        } else if (name === "mcp_call") {
+            var rawArgs = args.arguments;
+            if (typeof rawArgs === "string") {
+                try {
+                    rawArgs = JSON.parse(rawArgs);
+                } catch (e) {
+                    rawArgs = {};
+                }
+            }
+            if (rawArgs === undefined || rawArgs === null)
+                rawArgs = {};
+            var payload = JSON.stringify({
+                server: args.server || "",
+                tool: args.tool || "",
+                arguments: rawArgs
+            });
+            root._mcpHttpRequest("POST", "/call", payload, message, "mcp_call");
+        } else if (name === "call_agent") {
             const agentType = (args.agent || "").toLowerCase().trim();
             const task = args.task || "";
             if (!root.agentDefs[agentType]) {
@@ -4814,6 +5025,29 @@ print('Inserted at line ${insertLine}: ${rawPath}')
             }
             commandExecutionProc.shellCommand = shellCmd;
             commandExecutionProc.running = true;
+        } else if (name === "dream") {
+            const dreamAction = (args.action || "gather").trim();
+            const dreamScript = `"${Directories.aiMemoryPath.replace('memory.md', 'dream.py')}"`;
+            const dreamMsg = createFunctionOutputMessage(name, "", false);
+            const dreamId = idForMessage(dreamMsg);
+            root.messageIDs = [...root.messageIDs, dreamId];
+            root.messageByID[dreamId] = dreamMsg;
+            commandExecutionProc.message = dreamMsg;
+            commandExecutionProc.baseMessageContent = dreamMsg.content;
+            if (dreamAction === "auto") {
+                commandExecutionProc.shellCommand = `python3 ${dreamScript} auto 2>&1`;
+            } else if (dreamAction === "gather") {
+                commandExecutionProc.shellCommand = `python3 ${dreamScript} gather 2>&1`;
+            } else if (dreamAction === "apply") {
+                const actionsJson = JSON.stringify(args.actions || []);
+                const b64Actions = btoa(unescape(encodeURIComponent(actionsJson)));
+                commandExecutionProc.shellCommand = `python3 ${dreamScript} apply "$(python3 -c "import base64; print(base64.b64decode('${b64Actions}').decode())")" 2>&1`;
+            } else {
+                addFunctionOutputMessage(name, `Unknown action: ${dreamAction}. Use 'gather' or 'apply'.`);
+                requester.makeRequest();
+                return;
+            }
+            commandExecutionProc.running = true;
         } else if (name === "kg_store") {
             const action = (args.action || "").trim();
             const kgScript = `"${Directories.aiMemoryPath.replace('memory.md', 'kg.py')}"`;
@@ -5556,6 +5790,116 @@ echo "SCREENSHOT_OFFSET:\${SS_OFFSET_X}:\${SS_OFFSET_Y}"
     FileView {
         id: chatExportFile
         blockLoading: true
+    }
+
+    // ── Training data logger ─────────────────────────────────────────────────
+    // Appends completed agent traces and sessions to a JSONL file for fine-tuning.
+    // Each line is a self-contained conversation with tool calls and results.
+    readonly property string _trainingLogPath: Directories.aiChats + "/training_log.jsonl"
+
+    function _appendTrainingLog(jsonStr) {
+        Quickshell.execDetached(["bash", "-c", `printf '%s\n' '${jsonStr.replace(/'/g, "'\\''")}' >> '${_trainingLogPath}'`]);
+    }
+
+    function _isCleanTrace(messages) {
+        // Count consecutive calls to the same tool
+        let lastTool = "";
+        let repeatCount = 0;
+        let maxRepeat = 0;
+        const toolCalls = {};
+        for (const m of messages) {
+            const fn = m.functionName || "";
+            if (!fn) continue;
+            toolCalls[fn] = (toolCalls[fn] || 0) + 1;
+            if (fn === lastTool) {
+                repeatCount++;
+                maxRepeat = Math.max(maxRepeat, repeatCount);
+            } else {
+                repeatCount = 1;
+                lastTool = fn;
+            }
+        }
+        // Reject: same tool called 4+ times in a row (stuck in a loop)
+        if (maxRepeat >= 4) {
+            console.log(`[AI] Training skip: tool repeated ${maxRepeat}x in a row`);
+            return false;
+        }
+        // Reject: any single tool called more than 8 times total
+        for (const fn in toolCalls) {
+            if (toolCalls[fn] > 8) {
+                console.log(`[AI] Training skip: ${fn} called ${toolCalls[fn]}x total`);
+                return false;
+            }
+        }
+        // Reject: error/failure patterns in tool responses
+        let errorCount = 0;
+        for (const m of messages) {
+            const resp = (m.functionResponse || "").toLowerCase();
+            if (resp.includes("error:") || resp.includes("failed") || resp.includes("command not found") || resp.includes("no such file")) {
+                errorCount++;
+            }
+        }
+        if (errorCount > 2) {
+            console.log(`[AI] Training skip: ${errorCount} error responses`);
+            return false;
+        }
+        return true;
+    }
+
+    function _logAgentTrace(agentType, result) {
+        const ids = root.agentMsgIDs[agentType] || [];
+        if (ids.length < 2) return; // Skip trivial traces
+        const messages = ids.map(id => root.agentMsgByID[id]).filter(Boolean);
+        if (!_isCleanTrace(messages)) return;
+        const trace = {
+            timestamp: Date.now(),
+            agent: agentType,
+            model: root.agentCloudModel,
+            systemPrompt: root.agentDefs[agentType]?.systemPrompt || "",
+            result: result,
+            messages: messages.map(m => ({
+                role: m.role,
+                content: m.rawContent || m.content || "",
+                functionName: m.functionName || "",
+                functionCall: m.functionCall || null,
+                functionResponse: m.functionResponse || "",
+                toolCallId: m.toolCallId || "",
+                localFilePath: m.localFilePath || "",
+                fileMimeType: m.fileMimeType || "",
+            }))
+        };
+        root._appendTrainingLog(JSON.stringify(trace));
+        console.log(`[AI] Training trace logged: ${agentType} (${ids.length} messages)`);
+    }
+
+    function _logCompletedSession() {
+        const messages = root.messageIDs.map(id => root.messageByID[id]).filter(Boolean);
+        if (messages.length < 2) return;
+        // Only log sessions that had tool calls (interesting for training)
+        const hasToolCalls = messages.some(m => m.functionName && m.functionName.length > 0);
+        if (!hasToolCalls) return;
+        if (root._sessionLogged) return;
+        if (!_isCleanTrace(messages)) return;
+        root._sessionLogged = true;
+        const trace = {
+            timestamp: Date.now(),
+            agent: "coordinator",
+            model: root.currentModel || "",
+            systemPrompt: root.systemPrompt,
+            result: "",
+            messages: messages.map(m => ({
+                role: m.role,
+                content: m.rawContent || m.content || "",
+                functionName: m.functionName || "",
+                functionCall: m.functionCall || null,
+                functionResponse: m.functionResponse || "",
+                toolCallId: m.toolCallId || "",
+                localFilePath: m.localFilePath || "",
+                fileMimeType: m.fileMimeType || "",
+            }))
+        };
+        root._appendTrainingLog(JSON.stringify(trace));
+        console.log(`[AI] Training session logged: coordinator (${messages.length} messages)`);
     }
 
     Process {

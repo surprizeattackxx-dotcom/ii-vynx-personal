@@ -11,6 +11,7 @@ import qs.modules.common.functions
 
 RippleButton {
     id: root
+    signal deleteRequested(string schemeName)
     readonly property string builtInThemeDirectory: Directories.defaultThemes
     readonly property string customThemeDirectory: Directories.customThemes
 

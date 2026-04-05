@@ -91,14 +91,13 @@ for monitor in "${MONITORS[@]}"; do
 
     MONITOR_PATHS[$monitor]="$dest"
 
-    swww img "$dest" \
+    awww img "$dest" \
         --outputs "$monitor" \
         --transition-type grow \
         --transition-pos "${cursorposx},${cursorposy}" \
         --transition-duration 0.8 \
         --transition-fps 60 \
-        --transition-bezier .65,0,.35,1 \
-        --invert-y &
+        --transition-step 90 &
 
     echo "[konachan-wall] $monitor → $dest"
 
@@ -151,13 +150,13 @@ if [[ -n "$primary_path" ]]; then
 
         echo "[konachan-wall] Restoring $monitor → $other_path"
 
-        swww img "$other_path" \
+        awww img "$other_path" \
             --outputs "$monitor" \
             --transition-type grow \
             --transition-pos "0.5,0.5" \
             --transition-duration 0.8 \
             --transition-fps 60 \
-            --transition-bezier .65,0,.35,1 &
+            --transition-step 90 &
 
     done
 

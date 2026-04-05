@@ -1173,7 +1173,6 @@ ContentPage {
             title: Translation.tr("Overview style")
 
             ConfigSelectionArray {
-                register: true
                 currentValue: Config.options.overview.style
                 onSelected: newValue => {
                     Config.options.overview.style = newValue

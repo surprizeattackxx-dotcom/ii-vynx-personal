@@ -120,6 +120,7 @@ _write_hypr_colors_conf() {
     local shadow_inactive="$5"
     local group_active="$6"
     local group_inactive="$7"
+    local surface="$8"
 
     local hypr_colors_file="$HOME/.config/hypr/material-colors.conf"
     mkdir -p "$(dirname "$hypr_colors_file")"
@@ -146,6 +147,12 @@ group {
     col.border_locked_active   = $group_active
     col.border_locked_inactive = $group_inactive
 }
+
+plugin {
+    hyprexpo {
+        bg_col = rgb(${surface#\#})
+    }
+}
 HYPREOF
     echo "[applycolor] Hyprland colors written to $hypr_colors_file"
 }
@@ -156,13 +163,14 @@ apply_borders() {
         return 0
     fi
 
-    local primary="" primary_container="" surface_variant="" scrim=""
+    local primary="" primary_container="" surface_variant="" scrim="" surface=""
     for i in "${!colorlist[@]}"; do
         case "${colorlist[$i]}" in
             '$primary')          primary="${colorvalues[$i]}"          ;;
             '$primaryContainer') primary_container="${colorvalues[$i]}" ;;
             '$surfaceVariant')   surface_variant="${colorvalues[$i]}"  ;;
             '$scrim')            scrim="${colorvalues[$i]}"            ;;
+            '$surface')             surface="${colorvalues[$i]}"             ;;
         esac
     done
 
@@ -170,6 +178,7 @@ apply_borders() {
     primary_container="${primary_container:-#6e8fd4}"
     surface_variant="${surface_variant:-#45475a}"
     scrim="${scrim:-#000000}"
+    surface="${surface:-#000000}"
 
     # Hyprland color format: 0xAARRGGBB
     local col_active_1="0xff${primary#\#}"
@@ -191,7 +200,7 @@ apply_borders() {
     hyprctl keyword group:col.border_locked_inactive "$group_inactive"                   2>/dev/null
 
     # Write persistent config so colors survive reboots
-    _write_hypr_colors_conf         "$col_active_1" "$col_active_2" "$col_inactive"         "$shadow_col" "$shadow_inactive"         "$group_active" "$group_inactive"
+    _write_hypr_colors_conf         "$col_active_1" "$col_active_2" "$col_inactive"         "$shadow_col" "$shadow_inactive"         "$group_active" "$group_inactive" "$surface"
 }
 
 # ---------------------------------------------------------------------------
@@ -434,6 +443,76 @@ ROFIEOF
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Cava — splice Material You gradient colors into cava config
+# Reads the matugen-generated file and replaces the gradient block
+# ---------------------------------------------------------------------------
+apply_cava() {
+    local cava_conf="$HOME/.config/cava/config"
+    local cava_colors="$HOME/.config/cava/material-colors.conf"
+    [[ -f "$cava_conf" ]] || return 0
+    [[ -f "$cava_colors" ]] || return 0
+
+    # Extract the gradient block from the generated file (skip the [color] header)
+    local gradient_block
+    gradient_block=$(grep -v '^\[color\]' "$cava_colors" | grep -v '^$')
+
+    # Use awk to replace the gradient section in the config
+    awk -v new="$gradient_block" '
+        /^gradient = / { print new; skip=1; next }
+        skip && /^gradient_color_/ { next }
+        skip && !/^gradient_color_/ { skip=0 }
+        { print }
+    ' "$cava_conf" > "${cava_conf}.tmp" && mv "${cava_conf}.tmp" "$cava_conf"
+
+    echo "[applycolor] Cava gradient colors updated"
+}
+
+# ---------------------------------------------------------------------------
+# Starship — splice Material You palette into starship.toml
+# Appends/replaces the [palettes.material] block and sets palette = "material"
+# ---------------------------------------------------------------------------
+apply_starship() {
+    local starship_conf="$HOME/.config/starship.toml"
+    local palette_file="$HOME/.local/state/quickshell/user/generated/starship-palette.toml"
+    [[ -f "$starship_conf" ]] || return 0
+    [[ -f "$palette_file" ]] || return 0
+
+    # Ensure palette = "material" is set at the top level
+    if ! grep -q '^palette' "$starship_conf"; then
+        sed -i '1s|^|palette = "material"\n|' "$starship_conf"
+    else
+        sed -i 's/^palette = .*/palette = "material"/' "$starship_conf"
+    fi
+
+    # Remove existing [palettes.material] block if present
+    sed -i '/^\[palettes\.material\]/,/^\[/{/^\[palettes\.material\]/d;/^\[/!d}' "$starship_conf"
+
+    # Append the new palette
+    printf '\n' >> "$starship_conf"
+    cat "$palette_file" >> "$starship_conf"
+
+    echo "[applycolor] Starship palette updated"
+}
+
+# ---------------------------------------------------------------------------
+# Hyprexpo — update bg_col to match Material You surface
+# ---------------------------------------------------------------------------
+apply_hyprexpo() {
+    command -v hyprctl &>/dev/null || return 0
+
+    local surface=""
+    for i in "${!colorlist[@]}"; do
+        case "${colorlist[$i]}" in
+            '$surface') surface="${colorvalues[$i]}" ;;
+        esac
+    done
+    surface="${surface:-#000000}"
+
+    hyprctl keyword plugin:hyprexpo:bg_col "rgb(${surface#\#})" 2>/dev/null
+    echo "[applycolor] Hyprexpo bg_col updated to $surface"
+}
 # CONFIG_DIR is only needed for apply_qt, so warn but don't hard-exit
 # ---------------------------------------------------------------------------
 if [[ -d "$CONFIG_DIR" ]]; then
@@ -462,7 +541,43 @@ apply_gtk4 &        # GTK4 colors.css — picked up automatically by running app
 apply_kitty &        # Kitty terminal config + live reload
 apply_rofi &         # Rofi color theme file
 # VSCode is handled by material-code-set-color.sh (called from switchwall.sh post_process)
-apply_borders &  # Always apply — hyprctl is safe to call any time Hyprland is running
+apply_borders &  # Always apply
+apply_cava &         # Cava gradient colors
+apply_starship &     # Starship prompt palette
+apply_hyprexpo &     # Hyprexpo overview background — hyprctl is safe to call any time Hyprland is running
 # apply_qt &  # Qt theming already handled by kde-material-colors
+
+# ---------------------------------------------------------------------------
+# Icon theme — Papirus-Light for light mode, Papirus-Dark for dark mode
+# Detects mode from gsettings (set by fetchwall pre_process)
+# ---------------------------------------------------------------------------
+apply_icons() {
+    local mode
+    mode=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | tr -d "'")
+    local icon_theme="Papirus-Dark"
+    [[ "$mode" == "prefer-light" ]] && icon_theme="Papirus-Light"
+
+    # GTK 3
+    sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=$icon_theme/" \
+        "$HOME/.config/gtk-3.0/settings.ini" 2>/dev/null
+    # GTK 4
+    sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=$icon_theme/" \
+        "$HOME/.config/gtk-4.0/settings.ini" 2>/dev/null
+    # GTK 2
+    sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=\"$icon_theme\"/" \
+        "$HOME/.gtkrc-2.0" 2>/dev/null
+    # xsettingsd
+    sed -i "s|Net/IconThemeName \".*\"|Net/IconThemeName \"$icon_theme\"|" \
+        "$HOME/.config/xsettingsd/xsettingsd.conf" 2>/dev/null
+    # KDE
+    sed -i "s/^Theme=.*/Theme=$icon_theme/" \
+        "$HOME/.config/kdeglobals" 2>/dev/null
+    # Hyprland env (runtime)
+    hyprctl keyword env GTK_ICON_THEME,"$icon_theme" 2>/dev/null
+
+    echo "[applycolor] Icon theme set to $icon_theme"
+}
+
+apply_icons &
 
 wait

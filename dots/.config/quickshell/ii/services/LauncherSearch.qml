@@ -1,6 +1,7 @@
 pragma Singleton
 
 import qs.modules.common
+import qs.services
 import qs.modules.common.models
 import qs.modules.common.functions
 import QtQuick
@@ -71,6 +72,7 @@ Singleton {
             action: "dark",
             execute: () => {
                 Quickshell.execDetached([Directories.darkModeToggleScriptPath, "dark"]);
+                MaterialThemeLoader.reloadAfterExternalColorChange();
             }
         },
         {
@@ -83,6 +85,7 @@ Singleton {
             action: "light",
             execute: () => {
                 Quickshell.execDetached([Directories.darkModeToggleScriptPath, "light"]);
+                MaterialThemeLoader.reloadAfterExternalColorChange();
             }
         },
         {

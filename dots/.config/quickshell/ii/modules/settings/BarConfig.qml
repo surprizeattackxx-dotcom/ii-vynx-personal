@@ -497,9 +497,9 @@ ContentPage {
             ConfigSwitch {
                 buttonIcon: "content_paste"
                 text: Translation.tr("Clipboard")
-                checked: Config.options.bar.utilButtons.showClipboard ?? true
+                checked: Config.options.bar.utilButtons?.showClipboard ?? true
                 onCheckedChanged: {
-                    Config.options.bar.utilButtons.showClipboard = checked;
+                    if (Config.options.bar.utilButtons) Config.options.bar.utilButtons.showClipboard = checked;
                 }
             }
         }
@@ -542,9 +542,9 @@ ContentPage {
         ConfigSwitch {
             buttonIcon: "preview"
             text: Translation.tr('Show window preview on hover')
-            checked: Config.options.bar.workspaces.showPreviewOnHover ?? true
+            checked: Config.options.bar.workspaces?.showPreviewOnHover ?? true
             onCheckedChanged: {
-                Config.options.bar.workspaces.showPreviewOnHover = checked;
+                if (Config.options.bar.workspaces) Config.options.bar.workspaces.showPreviewOnHover = checked;
             }
         }
 
@@ -631,6 +631,22 @@ ContentPage {
                         value: '["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV","XVI","XVII","XVIII","XIX","XX"]'
                     }
                 ]
+            }
+        }
+    }
+
+    ContentSection {
+        id: systemupdates
+        icon: "system_update_alt"
+        title: Translation.tr("System Updates")
+
+        ConfigSwitch {
+            buttonIcon: "visibility_off"
+            text: Translation.tr("Hide when no updates")
+            checked: Config.options.updates?.hideWhenZero ?? false
+            onCheckedChanged: {
+                if (!Config.options.updates) Config.options.updates = {};
+                Config.options.updates.hideWhenZero = checked;
             }
         }
     }

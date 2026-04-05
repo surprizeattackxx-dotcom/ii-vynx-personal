@@ -226,7 +226,6 @@ ContentPage {
                     Layout.fillWidth: true
                 }
                 ConfigSelectionArray {
-                    register: true
                     Layout.fillWidth: false
                     currentValue: Config.options.background.widgets.clock.placementStrategy
                     onSelected: newValue => {
@@ -267,7 +266,6 @@ ContentPage {
                     title: Translation.tr("Clock style")
                     Layout.fillWidth: true
                     ConfigSelectionArray {
-                        register: true
                         currentValue: Config.options.background.widgets.clock.style
                         onSelected: newValue => {
                             Config.options.background.widgets.clock.style = newValue;
@@ -291,7 +289,6 @@ ContentPage {
                     title: Translation.tr("Clock style (locked)")
                     Layout.fillWidth: false
                     ConfigSelectionArray {
-                        register: true
                         currentValue: Config.options.background.widgets.clock.styleLocked
                         onSelected: newValue => {
                             Config.options.background.widgets.clock.styleLocked = newValue;
@@ -842,7 +839,6 @@ ContentPage {
                     Layout.fillWidth: true
                 }
                 ConfigSelectionArray {
-                    register: true
                     Layout.fillWidth: false
                     currentValue: Config.options.background.widgets.weather.placementStrategy
                     onSelected: newValue => {
@@ -905,7 +901,6 @@ ContentPage {
                 }
 
                 ConfigSelectionArray {
-                    register: true
                     Layout.fillWidth: false
                     currentValue: Config.options.background.widgets.media.placementStrategy
                     onSelected: newValue => {

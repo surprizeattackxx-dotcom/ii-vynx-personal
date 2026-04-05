@@ -18,6 +18,25 @@ Singleton {
         themeFileView.reload()
     }
 
+    /** Call after toggle_darkmode.sh / switchwall updates colors.json — FileView often misses rapid writes. */
+    function reloadAfterExternalColorChange() {
+        delayedExternalReload1.restart()
+        delayedExternalReload2.restart()
+    }
+
+    Timer {
+        id: delayedExternalReload1
+        interval: 120
+        repeat: false
+        onTriggered: root.reapplyTheme()
+    }
+    Timer {
+        id: delayedExternalReload2
+        interval: 520
+        repeat: false
+        onTriggered: root.reapplyTheme()
+    }
+
     function applyColors(fileContent) {
         let json
         try { json = JSON.parse(fileContent) }

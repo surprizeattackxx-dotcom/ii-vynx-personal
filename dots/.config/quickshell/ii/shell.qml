@@ -17,6 +17,9 @@ import "services"
 import "panelFamilies"
 import "./modules/ii"
 
+import qs.modules.common
+import qs.modules.common.widgets
+
 ShellRoot {
     id: root
 
@@ -75,18 +78,18 @@ ShellRoot {
         Rectangle {
             id: windowRect
             anchors.fill: parent
-            color: "#1d2021"
-            radius: 12
+            color: Appearance.m3colors.m3surfaceContainerLow
+            radius: Appearance.rounding.small
             opacity: 1
 
-            // Thin orange border
             Rectangle {
                 anchors.fill: parent
                 color: "transparent"
                 radius: parent.radius
-                border.color: "#d79921"
+                border.color: Appearance.colors.colPrimary
                 border.width: 1
-                opacity: 0.5
+                opacity: 0.45
+                enabled: false
                 z: 10
             }
 
@@ -94,18 +97,20 @@ ShellRoot {
                 anchors.fill: parent
                 spacing: 0
 
-                // --- Header ---
+                // --- Header (M3: secondaryContainer band + primary strip, same idea as StyledPopupHeaderRow) ---
                 Rectangle {
                     Layout.fillWidth: true
                     height: 54
-                    color: "#282828"
-                    radius: 12
+                    color: Appearance.m3colors.m3secondaryContainer
+                    radius: Appearance.rounding.small
+                    border.width: 1
+                    border.color: Appearance.m3colors.m3outlineVariant
                     Rectangle {
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
                         height: 12
-                        color: "#282828"
+                        color: Appearance.m3colors.m3secondaryContainer
                     }
 
                     RowLayout {
@@ -114,27 +119,47 @@ ShellRoot {
                         anchors.rightMargin: 12
                         spacing: 10
 
-                        Rectangle { width: 4; height: 22; radius: 2; color: "#d79921" }
-
-                        Text {
-                            text: "Animations"
-                            font.pixelSize: 16
-                            font.weight: Font.DemiBold
-                            color: "#ebdbb2"
-                            Layout.fillWidth: true
+                        Rectangle {
+                            width: 4
+                            height: 22
+                            radius: 2
+                            color: Appearance.colors.colPrimary
                         }
 
-                        Text {
+                        MaterialSymbol {
+                            text: "motion_mode"
+                            fill: 0
+                            font.weight: Font.DemiBold
+                            iconSize: Appearance.font.pixelSize.large
+                            color: Appearance.m3colors.m3onSecondaryContainer
+                        }
+
+                        StyledText {
+                            text: "Animations"
+                            Layout.fillWidth: true
+                            font.weight: Font.DemiBold
+                            font.pixelSize: Appearance.font.pixelSize.normal
+                            color: Appearance.m3colors.m3onSecondaryContainer
+                        }
+
+                        StyledText {
                             text: presetsModel.count + " presets"
-                            font.pixelSize: 11
-                            color: "#928374"
+                            font.pixelSize: Appearance.font.pixelSize.smallest
+                            color: Appearance.m3colors.m3onSurfaceVariant
                         }
 
                         Rectangle {
-                            width: 28; height: 28; radius: 6
-                            color: closeMa.containsMouse ? "#cc241d" : "#3c3836"
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Text { anchors.centerIn: parent; text: "✕"; color: "#ebdbb2"; font.pixelSize: 13 }
+                            width: 28
+                            height: 28
+                            radius: Appearance.rounding.unsharpenmore
+                            color: closeMa.containsMouse ? Appearance.colors.colError : Appearance.colors.colLayer3
+                            Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
+                            StyledText {
+                                anchors.centerIn: parent
+                                text: "✕"
+                                font.pixelSize: Appearance.font.pixelSize.smallie
+                                color: Appearance.colors.colOnLayer2
+                            }
                             MouseArea {
                                 id: closeMa
                                 anchors.fill: parent
@@ -153,11 +178,11 @@ ShellRoot {
                     Layout.leftMargin: 14
                     Layout.rightMargin: 14
                     height: 38
-                    radius: 8
-                    color: "#32302f"
-                    border.color: searchField.activeFocus ? "#d79921" : "#3c3836"
+                    radius: Appearance.rounding.unsharpenmore
+                    color: Appearance.colors.colLayer2
+                    border.color: searchField.activeFocus ? Appearance.colors.colPrimary : Appearance.m3colors.m3outlineVariant
                     border.width: 1
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
 
                     RowLayout {
                         anchors.fill: parent
@@ -165,36 +190,39 @@ ShellRoot {
                         anchors.rightMargin: 10
                         spacing: 8
 
-                        Text {
-                            text: "⌕"
-                            font.pixelSize: 16
-                            color: searchField.activeFocus ? "#d79921" : "#928374"
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                        MaterialSymbol {
+                            text: "search"
+                            fill: 0
+                            iconSize: Appearance.font.pixelSize.large
+                            color: searchField.activeFocus ? Appearance.colors.colPrimary : Appearance.m3colors.m3outline
+                            Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
                         }
 
                         TextInput {
                             id: searchField
                             Layout.fillWidth: true
-                            color: "#ebdbb2"
-                            font.pixelSize: 13
-                            selectionColor: "#d79921"
-                            selectedTextColor: "#1d2021"
+                            color: Appearance.colors.colOnSurface
+                            font.pixelSize: Appearance.font.pixelSize.smallie
+                            font.family: Appearance.font.family.main
+                            selectionColor: Appearance.colors.colPrimary
+                            selectedTextColor: Appearance.colors.colOnPrimary
                             clip: true
                             onTextChanged: root.searchQuery = text.toLowerCase()
 
                             Text {
                                 anchors.fill: parent
                                 text: "Search presets..."
-                                color: "#928374"
-                                font.pixelSize: 13
+                                color: Appearance.m3colors.m3onSurfaceVariant
+                                font.pixelSize: Appearance.font.pixelSize.smallie
+                                font.family: Appearance.font.family.main
                                 visible: !searchField.text && !searchField.activeFocus
                             }
                         }
 
-                        Text {
+                        StyledText {
                             text: "✕"
-                            font.pixelSize: 11
-                            color: "#928374"
+                            font.pixelSize: Appearance.font.pixelSize.smallest
+                            color: Appearance.m3colors.m3onSurfaceVariant
                             visible: searchField.text.length > 0
                             MouseArea {
                                 anchors.fill: parent
@@ -215,6 +243,7 @@ ShellRoot {
                     Layout.bottomMargin: 14
                     clip: true
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical: StyledScrollBar {}
 
                     ListView {
                         id: presetsList
@@ -232,19 +261,25 @@ ShellRoot {
                             Rectangle {
                                 id: card
                                 anchors.fill: parent
-                                radius: 7
-                                color: root.activePreset === model.name ? "#2a2215" : (cardMa.containsMouse ? "#3c3836" : "#32302f")
-                                border.color: root.activePreset === model.name ? "#d79921" : (cardMa.containsMouse ? "#fe8019" : "transparent")
+                                radius: Appearance.rounding.unsharpenmore
+                                color: root.activePreset === model.name
+                                    ? Appearance.colors.colPrimaryContainer
+                                    : (cardMa.containsMouse ? Appearance.colors.colLayer3Hover : Appearance.colors.colLayer2)
+                                border.color: root.activePreset === model.name || cardMa.containsMouse
+                                    ? Appearance.colors.colPrimary
+                                    : "transparent"
                                 border.width: 1
-                                Behavior on color { ColorAnimation { duration: 110 } }
-                                Behavior on border.color { ColorAnimation { duration: 110 } }
+                                Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
+                                Behavior on border.color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
 
                                 Rectangle {
-                                    width: 3; height: 22; radius: 2
+                                    width: 3
+                                    height: 22
+                                    radius: 2
                                     anchors.left: parent.left
                                     anchors.leftMargin: 1
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: "#d79921"
+                                    color: Appearance.colors.colPrimary
                                     visible: root.activePreset === model.name
                                 }
 
@@ -252,24 +287,28 @@ ShellRoot {
                                     anchors.fill: parent
                                     anchors.leftMargin: root.activePreset === model.name ? 16 : 14
                                     anchors.rightMargin: 14
-                                    Behavior on anchors.leftMargin { NumberAnimation { duration: 120 } }
+                                    Behavior on anchors.leftMargin { animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this) }
 
-                                    Text {
+                                    StyledText {
                                         text: model.name
-                                        color: root.activePreset === model.name ? "#d79921" : (cardMa.containsMouse ? "#ebdbb2" : "#d5c4a1")
-                                        font.pixelSize: 13
+                                        color: root.activePreset === model.name
+                                            ? Appearance.colors.colPrimary
+                                            : (cardMa.containsMouse ? Appearance.colors.colOnSurface : Appearance.colors.colOnSurfaceVariant)
+                                        font.pixelSize: Appearance.font.pixelSize.smallie
                                         font.weight: root.activePreset === model.name ? Font.DemiBold : Font.Normal
                                         Layout.fillWidth: true
                                         elide: Text.ElideRight
-                                        Behavior on color { ColorAnimation { duration: 110 } }
+                                        Behavior on color { animation: Appearance.animation.elementMoveFast.colorAnimation.createObject(this) }
                                     }
 
-                                    Text {
+                                    StyledText {
                                         text: root.activePreset === model.name ? "✓ active" : (cardMa.containsMouse ? "apply →" : "")
-                                        color: root.activePreset === model.name ? "#b8bb26" : "#fe8019"
-                                        font.pixelSize: 11
+                                        color: root.activePreset === model.name
+                                            ? Appearance.m3colors.m3success
+                                            : Appearance.colors.colPrimary
+                                        font.pixelSize: Appearance.font.pixelSize.smallest
                                         opacity: (root.activePreset === model.name || cardMa.containsMouse) ? 1 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 100 } }
+                                        Behavior on opacity { animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(this) }
                                     }
                                 }
 
@@ -278,7 +317,7 @@ ShellRoot {
                                     anchors.centerIn: parent
                                     width: 0; height: 0
                                     radius: width / 2
-                                    color: "#d79921"
+                                    color: Appearance.colors.colPrimary
                                     opacity: 0
                                     SequentialAnimation {
                                         id: ripple
