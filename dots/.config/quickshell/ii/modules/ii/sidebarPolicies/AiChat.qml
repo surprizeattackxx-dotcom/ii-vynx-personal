@@ -667,8 +667,10 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                 id: inputFieldRowLayout
                 anchors {
                     bottom: commandButtonsRow.top
+                    bottom: commandButtonsRow.top
                     left: parent.left
                     right: parent.right
+                    bottomMargin: 5
                     bottomMargin: 5
                 }
                 spacing: 0
@@ -688,6 +690,7 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                         color: activeFocus ? Appearance.m3colors.m3onSurface : Appearance.m3colors.m3onSurfaceVariant
                         placeholderText: Translation.tr('Message the model... "%1" for commands').arg(root.commandPrefix)
 
+                        background: null
                         background: null
 
                         onTextChanged: {
@@ -833,6 +836,10 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                             root.handleInput(text);
                             text = "";
                         }
+                        function accept() {
+                            root.handleInput(text);
+                            text = "";
+                        }
 
                         Keys.onPressed: event => {
                             if (event.key === Qt.Key_Tab) {
@@ -892,8 +899,67 @@ Inline w/ backslash and round brackets \\(e^{i\\pi} + 1 = 0\\)
                         }
                     }
                 }
+                        Keys.onPressed: event => {
+                            if (event.key === Qt.Key_Tab) {
+                                suggestions.acceptSelectedWord();
+                                event.accepted = true;
+                            } else if (event.key === Qt.Key_Up && suggestions.visible) {
+                                suggestions.selectedIndex = Math.max(0, suggestions.selectedIndex - 1);
+                                event.accepted = true;
+                            } else if (event.key === Qt.Key_Down && suggestions.visible) {
+                                suggestions.selectedIndex = Math.min(root.suggestionList.length - 1, suggestions.selectedIndex + 1);
+                                event.accepted = true;
+                            } else if ((event.key === Qt.Key_Enter || event.key === Qt.Key_Return)) {
+                                if (event.modifiers & Qt.ShiftModifier) {
+                                    // Insert newline
+                                    messageInputField.insert(messageInputField.cursorPosition, "\n");
+                                    event.accepted = true;
+                                } else {
+                                    // Accept text
+                                    const inputText = messageInputField.text;
+                                    messageInputField.clear();
+                                    root.handleInput(inputText);
+                                    event.accepted = true;
+                                }
+                            } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+                                // Intercept Ctrl+V to handle image/file pasting
+                                if (event.modifiers & Qt.ShiftModifier) {
+                                    // Let Shift+Ctrl+V = plain paste
+                                    messageInputField.text += Quickshell.clipboardText;
+                                    event.accepted = true;
+                                    return;
+                                }
+                                // Try image paste first
+                                const currentClipboardEntry = Cliphist.entries[0];
+                                const cleanCliphistEntry = StringUtils.cleanCliphistEntry(currentClipboardEntry);
+                                if (/^\d+\t\[\[.*binary data.*\d+x\d+.*\]\]$/.test(currentClipboardEntry)) {
+                                    // First entry = currently copied entry = image?
+                                    decodeImageAndAttachProc.handleEntry(currentClipboardEntry);
+                                    event.accepted = true;
+                                    return;
+                                } else if (cleanCliphistEntry.startsWith("file://")) {
+                                    // First entry = currently copied entry = image?
+                                    const fileName = decodeURIComponent(cleanCliphistEntry);
+                                    Ai.attachFile(fileName);
+                                    event.accepted = true;
+                                    return;
+                                }
+                                event.accepted = false; // No image, let text pasting proceed
+                            } else if (event.key === Qt.Key_Escape) {
+                                // Esc to detach file
+                                if (Ai.pendingFilePath.length > 0) {
+                                    Ai.attachFile("");
+                                    event.accepted = true;
+                                } else {
+                                    event.accepted = false;
+                                }
+                            }
+                        }
+                    
+                
                 RippleButton { // Send button
                     id: sendButton
+                    Layout.alignment: Qt.AlignBottom
                     Layout.alignment: Qt.AlignBottom
                     Layout.rightMargin: 5
                     implicitWidth: 40
